@@ -18,8 +18,13 @@ PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 pc = Pinecone(api_key=PINECONE_API_KEY)
 
 documents = load_pdf_files("data")
+print(f"Total PDFs Loaded: {len(documents)}")
+
 minimal_docs = filter_to_minimal_docs(documents)
+print(f"Minimal Documents: {len(minimal_docs)}")
+
 texts_chunk = text_split(minimal_docs)
+print(f"Total Chunks Created: {len(texts_chunk)}")
 
 embedding = download_embeddings()
 

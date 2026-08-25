@@ -7,8 +7,10 @@ from src.prompt import system_prompt
 
 from langchain_pinecone import PineconeVectorStore
 from langchain_groq import ChatGroq
-from langchain.chains import create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_classic.chains import create_retrieval_chain
+# from langchain.chains import create_retrieval_chain
+# from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_classic.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
 
 
@@ -46,7 +48,7 @@ docsearch = PineconeVectorStore(
 retriever = docsearch.as_retriever(
     search_type="similarity",
     search_kwargs={"k":6,
-                   "fetch_k":20
+                #    "fetch_k":20
                    
    }
 )
@@ -54,7 +56,8 @@ retriever = docsearch.as_retriever(
 
 # Gemini LLM
 llm = ChatGroq(
-    model="llama-3.3-70b-versatile",
+    model="openai/gpt-oss-20b",
+    # model="llama-3.3-70b-versatile",
     api_key=os.getenv("GROQ_API_KEY"),
     temperature=0
 )

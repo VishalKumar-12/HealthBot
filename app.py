@@ -4,17 +4,17 @@ import os
 
 from src.Ingestion import download_embeddings
 from src.prompt import system_prompt
+from src.api.medlineplus import search_medlineplus
+from src.api.context import format_medlineplus
 
 from langchain_pinecone import PineconeVectorStore
 from langchain_groq import ChatGroq
-from langchain_classic.chains import create_retrieval_chain
-# from langchain.chains import create_retrieval_chain
-# from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain_classic.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
 
 
+# =========================================================
 # Load Environment Variables
+# =========================================================
 
 load_dotenv()
 
@@ -25,19 +25,24 @@ os.environ["PINECONE_API_KEY"] = PINECONE_API_KEY
 os.environ["GROQ_API_KEY"] = GROQ_API_KEY
 
 
+# =========================================================
 # Flask App
+# =========================================================
 
 app = Flask(__name__)
 
 
+# =========================================================
 # Embedding Model
+# =========================================================
 
 embedding = download_embeddings()
 
 
+# =========================================================
 # Connect to Existing Pinecone Index
+# =========================================================
 
-# index_name = "healthbot"
 index_name = "healthbot-multilingual"
 
 docsearch = PineconeVectorStore(
@@ -45,24 +50,33 @@ docsearch = PineconeVectorStore(
     embedding=embedding,
 )
 
+
+# =========================================================
+# Retriever
+# =========================================================
+
 retriever = docsearch.as_retriever(
     search_type="similarity",
-    search_kwargs={"k":6,
-                #    "fetch_k":20
-                   
-   }
+    search_kwargs={
+        "k": 6
+    }
 )
 
 
-# Gemini LLM
+# =========================================================
+# Groq LLM
+# =========================================================
+
 llm = ChatGroq(
     model="openai/gpt-oss-20b",
-    # model="llama-3.3-70b-versatile",
-    api_key=os.getenv("GROQ_API_KEY"),
+    api_key=GROQ_API_KEY,
     temperature=0
 )
 
+
+# =========================================================
 # Prompt
+# =========================================================
 
 prompt = ChatPromptTemplate.from_messages(
     [
@@ -72,60 +86,170 @@ prompt = ChatPromptTemplate.from_messages(
 )
 
 
-# RAG Chain
-
-question_answer_chain = create_stuff_documents_chain(
-    llm,
-    prompt
-)
-
-rag_chain = create_retrieval_chain(
-    retriever,
-    question_answer_chain
-)
-
-
+# =========================================================
 # Routes
+# =========================================================
 
 @app.route("/")
 def index():
     return render_template("chat.html")
 
 
+# =========================================================
+# Chat Route
+# =========================================================
+
 @app.route("/get", methods=["POST"])
 def chat():
 
+    # -----------------------------------------------------
+    # Get user question
+    # -----------------------------------------------------
+
     msg = request.form["msg"]
 
-    # Retrieve relevant documents
+    print("\n======================================")
+    print("USER QUESTION:")
+    print(msg)
+    print("======================================")
+
+
+    # =====================================================
+    # 1. Retrieve information from PDF / Pinecone
+    # =====================================================
+
     docs = retriever.invoke(msg)
-    # Debug
-    print("\n==========================")
-    print("User Query:", msg)
-    print("Retrieved Docs:", len(docs))
+
+    print("\nPDF RESULTS:", len(docs))
+
 
     for i, doc in enumerate(docs):
-        print(f"\nDocument {i+1}")
-        print("Source:", doc.metadata.get("source"))
-        # print("Page:", doc.metadata.get("page"))
-        print(doc.page_content[:300])
+
+        print(f"\nPDF Document {i + 1}")
+
+        print(
+            "Source:",
+            doc.metadata.get("source")
+        )
+
+        print(
+            doc.page_content[:300]
+        )
 
 
-    
+    # =====================================================
+    # 2. Fetch information from MedlinePlus API
+    # =====================================================
 
-    # No documents found
-    if not docs:
-        return "I don't know about this because it is not available in my knowledge base."
+    api_results = search_medlineplus(msg)
 
-    # Generate answer using RAG
-    response = rag_chain.invoke({"input": msg})
-
-    return response["answer"]
+    print("\nMEDLINEPLUS RESULTS:", len(api_results))
 
 
+    # =====================================================
+    # 3. Convert MedlinePlus results into text
+    # =====================================================
+
+    api_context = format_medlineplus(
+        api_results
+    )
+
+
+    # =====================================================
+    # 4. Convert PDF documents into text
+    # =====================================================
+
+    if docs:
+
+        pdf_context = "\n\n".join(
+            doc.page_content
+            for doc in docs
+        )
+
+    else:
+
+        pdf_context = "No relevant information found in the PDF."
+
+
+    # =====================================================
+    # 5. Combine PDF + MedlinePlus
+    # =====================================================
+
+    combined_context = f"""
+
+==============================
+PDF MEDICAL INFORMATION
+==============================
+
+{pdf_context}
+
+
+==============================
+MEDLINEPLUS MEDICAL INFORMATION
+==============================
+
+{api_context}
+
+"""
+
+
+    # =====================================================
+    # Debug: Show combined context
+    # =====================================================
+
+    print("\n======================================")
+    print("COMBINED CONTEXT CREATED")
+    print("======================================")
+
+    print(
+        combined_context[:2000]
+    )
+
+
+    # =====================================================
+    # 6. Check if both sources are empty
+    # =====================================================
+
+    if not docs and not api_results:
+
+        return (
+            "I don't know about this because it is not "
+            "available in my medical sources."
+        )
+
+
+    # =====================================================
+    # 7. Create final prompt
+    # =====================================================
+
+    final_messages = prompt.format_messages(
+        context=combined_context,
+        input=msg
+    )
+
+
+    # =====================================================
+    # 8. Send PDF + API context to LLM
+    # =====================================================
+
+    response = llm.invoke(
+        final_messages
+    )
+
+
+    # =====================================================
+    # 9. Return final answer
+    # =====================================================
+
+    return response.content
+
+
+# =========================================================
 # Run Flask
+# =========================================================
 
 if __name__ == "__main__":
+
     app.run(
         host="127.0.0.1",
         port=5000,

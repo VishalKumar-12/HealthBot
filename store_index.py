@@ -29,14 +29,13 @@ print(f"Total Chunks Created: {len(texts_chunk)}")
 embedding = download_embeddings()
 
 # index_name = "healthbot"
-# index_name = "healthbot-multilingual"
-index_name = "healthbot-e5"
+index_name = "healthbot-multilingual"
+
 
 if not pc.has_index(index_name):
     pc.create_index(
         name=index_name,
-        dimension=384,
-        # dimension=1024,
+        dimension=1024,
         # dimension=384,
         metric="cosine",
         spec=ServerlessSpec(

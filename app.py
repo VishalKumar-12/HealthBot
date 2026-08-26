@@ -43,8 +43,7 @@ embedding = download_embeddings()
 # Connect to Existing Pinecone Index
 # =========================================================
 
-index_name = "healthbot-e5"
-# index_name = "healthbot-multilingua"
+index_name = "healthbot-multilingual"
 
 docsearch = PineconeVectorStore(
     index_name=index_name,

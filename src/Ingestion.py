@@ -40,26 +40,14 @@ def text_split(mininal_docs):
     texts_chunk = text_splitter.split_documents(mininal_docs)
     return texts_chunk
 
+
 def download_embeddings():
-    embeddings = HuggingFaceEmbeddings(
-        model_name="intfloat/multilingual-e5-small",
-        model_kwargs={
-            "device": "cpu"
-        },
+    return HuggingFaceEmbeddings(
+        model_name="BAAI/bge-m3",
         encode_kwargs={
             "normalize_embeddings": True
         }
     )
-
-    return embeddings
-
-# def download_embeddings():
-#     return HuggingFaceEmbeddings(
-#         model_name="BAAI/bge-m3",
-#         encode_kwargs={
-#             "normalize_embeddings": True
-#         }
-#     )
 
 # def download_embeddings():
 #     """

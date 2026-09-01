@@ -1,3 +1,4 @@
+
 from flask import Flask, render_template, request
 from dotenv import load_dotenv
 import os
@@ -37,18 +38,9 @@ app = Flask(__name__)
 # Pinecone Configuration
 # =========================================================
 
-<<<<<<< HEAD
-=======
-embedding = download_embeddings()
-
-
-# =========================================================
-# Connect to Existing Pinecone Index
-# =========================================================
-
->>>>>>> e21b5b2 (Update medical chatbot)
 index_name = "healthbot-multilingual-384"
 
+# Lazy loading
 embedding = None
 docsearch = None
 retriever = None
@@ -64,19 +56,32 @@ def get_retriever():
     global docsearch
     global retriever
 
-    if retriever is None:
+    # If retriever already exists, reuse it
+    if retriever is not None:
+        return retriever
 
-        print("\n======================================")
-        print("Loading embedding model...")
-        print("======================================")
+    print("\n======================================")
+    print("Loading embedding model...")
+    print("======================================")
 
+    try:
         embedding = download_embeddings()
 
         print("Embedding model loaded.")
 
-        print("\n======================================")
-        print("Connecting to Pinecone...")
-        print("======================================")
+    except Exception as e:
+
+        print("\nEMBEDDING ERROR:")
+        print(e)
+
+        raise
+
+
+    print("\n======================================")
+    print("Connecting to Pinecone...")
+    print("======================================")
+
+    try:
 
         docsearch = PineconeVectorStore(
             index_name=index_name,
@@ -91,6 +96,13 @@ def get_retriever():
         )
 
         print("Pinecone retriever ready.")
+
+    except Exception as e:
+
+        print("\nPINECONE CONNECTION ERROR:")
+        print(e)
+
+        raise
 
 
     return retriever
@@ -185,7 +197,10 @@ def chat():
         print("\nPINECONE SEARCH ERROR:")
         print(e)
 
-        docs = []
+        return (
+            "Sorry, I am unable to search the medical "
+            "information right now."
+        )
 
 
     print("\nPDF RESULTS:", len(docs))
@@ -210,56 +225,13 @@ def chat():
         )
 
         print(
+            "Content:",
             doc.page_content[:300]
         )
 
 
     # =====================================================
-<<<<<<< HEAD
-    # 3. Fetch Information from MedlinePlus
-    # =====================================================
-
-    try:
-
-        api_results = search_medlineplus(msg)
-
-    except Exception as e:
-
-        print("\nMEDLINEPLUS API ERROR:")
-        print(e)
-
-        api_results = []
-
-
-    print(
-        "\nMEDLINEPLUS RESULTS:",
-        len(api_results)
-    )
-
-
-    # =====================================================
-    # 4. Convert MedlinePlus Results to Text
-    # =====================================================
-
-    try:
-
-        api_context = format_medlineplus(
-            api_results
-        )
-
-    except Exception as e:
-
-        print("\nMEDLINEPLUS FORMAT ERROR:")
-        print(e)
-
-        api_context = "No MedlinePlus information available."
-
-
-    # =====================================================
-    # 5. Convert PDF Documents to Text
-=======
-    # 2. Convert PDF documents into text
->>>>>>> e21b5b2 (Update medical chatbot)
+    # 3. Convert PDF Documents into Text
     # =====================================================
 
     if docs:
@@ -272,71 +244,25 @@ def chat():
     else:
 
         pdf_context = (
-            "No relevant information found "
+            "No relevant information was found "
             "in the medical PDF."
         )
 
 
     # =====================================================
-<<<<<<< HEAD
-    # 6. Combine PDF + MedlinePlus
-    # =====================================================
-
-    combined_context = f"""
-
-==============================
-PDF MEDICAL INFORMATION
-==============================
-
-{pdf_context}
-
-
-==============================
-MEDLINEPLUS MEDICAL INFORMATION
-==============================
-
-{api_context}
-
-"""
-
-
-    # =====================================================
-    # Debug Context
-    # =====================================================
-
-    print("\n======================================")
-    print("COMBINED CONTEXT CREATED")
-    print("======================================")
-
-    print(
-        combined_context[:2000]
-    )
-
-
-    # =====================================================
-    # 7. Check if Both Sources Are Empty
-    # =====================================================
-
-    if not docs and not api_results:
-=======
-    # 3. Check if PDF information is available
+    # 4. Check if PDF Information is Available
     # =====================================================
 
     if not docs:
->>>>>>> e21b5b2 (Update medical chatbot)
 
         return (
-            "I don't know about this because it is not "
-            "available in my medical PDF."
+            "I don't know about this because the information "
+            "is not available in my medical PDF."
         )
 
 
     # =====================================================
-<<<<<<< HEAD
-    # 8. Create Final Prompt
-=======
-    # 4. Create final prompt
->>>>>>> e21b5b2 (Update medical chatbot)
+    # 5. Create Final Prompt
     # =====================================================
 
     final_messages = prompt.format_messages(
@@ -346,11 +272,7 @@ MEDLINEPLUS MEDICAL INFORMATION
 
 
     # =====================================================
-<<<<<<< HEAD
-    # 9. Send Context to Groq
-=======
-    # 5. Send PDF context to LLM
->>>>>>> e21b5b2 (Update medical chatbot)
+    # 6. Send Context to Groq
     # =====================================================
 
     try:
@@ -371,11 +293,7 @@ MEDLINEPLUS MEDICAL INFORMATION
 
 
     # =====================================================
-<<<<<<< HEAD
-    # 10. Return Final Answer
-=======
-    # 6. Return final answer
->>>>>>> e21b5b2 (Update medical chatbot)
+    # 7. Return Final Answer
     # =====================================================
 
     return response.content
@@ -387,16 +305,13 @@ MEDLINEPLUS MEDICAL INFORMATION
 
 if __name__ == "__main__":
 
-<<<<<<< HEAD
     port = int(
         os.environ.get("PORT", 5000)
     )
-=======
-    port = int(os.environ.get("PORT", 5000))
->>>>>>> e21b5b2 (Update medical chatbot)
 
     app.run(
         host="0.0.0.0",
         port=port,
         debug=False
     )
+

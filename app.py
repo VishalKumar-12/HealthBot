@@ -21,8 +21,11 @@ load_dotenv()
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-os.environ["PINECONE_API_KEY"] = PINECONE_API_KEY
-os.environ["GROQ_API_KEY"] = GROQ_API_KEY
+if not PINECONE_API_KEY:
+    raise ValueError("PINECONE_API_KEY is missing")
+
+if not GROQ_API_KEY:
+    raise ValueError("GROQ_API_KEY is missing")
 
 
 # =========================================================
@@ -33,14 +36,7 @@ app = Flask(__name__)
 
 
 # =========================================================
-# Embedding Model
-# =========================================================
-
-embedding = download_embeddings()
-
-
-# =========================================================
-# Connect to Existing Pinecone Index
+# Pinecone Configuration
 # =========================================================
 
 index_name = "healthbot-multilingual-384"
@@ -50,6 +46,10 @@ docsearch = None
 retriever = None
 
 
+# =========================================================
+# Lazy Load Embedding Model + Pinecone
+# =========================================================
+
 def get_retriever():
 
     global embedding
@@ -58,9 +58,17 @@ def get_retriever():
 
     if retriever is None:
 
+        print("\n======================================")
         print("Loading embedding model...")
+        print("======================================")
 
         embedding = download_embeddings()
+
+        print("Embedding model loaded.")
+
+        print("\n======================================")
+        print("Connecting to Pinecone...")
+        print("======================================")
 
         docsearch = PineconeVectorStore(
             index_name=index_name,
@@ -73,6 +81,9 @@ def get_retriever():
                 "k": 4
             }
         )
+
+        print("Pinecone retriever ready.")
+
 
     return retriever
 
@@ -101,11 +112,12 @@ prompt = ChatPromptTemplate.from_messages(
 
 
 # =========================================================
-# Routes
+# Home Route
 # =========================================================
 
 @app.route("/")
 def index():
+
     return render_template("chat.html")
 
 
@@ -116,11 +128,16 @@ def index():
 @app.route("/get", methods=["POST"])
 def chat():
 
-    # -----------------------------------------------------
-    # Get user question
-    # -----------------------------------------------------
+    # =====================================================
+    # Get User Question
+    # =====================================================
 
-    msg = request.form["msg"]
+    msg = request.form.get("msg", "").strip()
+
+    if not msg:
+
+        return "Please enter a question."
+
 
     print("\n======================================")
     print("USER QUESTION:")
@@ -129,13 +146,46 @@ def chat():
 
 
     # =====================================================
-    # 1. Retrieve information from PDF / Pinecone
+    # 1. Get Pinecone Retriever
     # =====================================================
 
-    docs = retriever.invoke(msg)
+    try:
+
+        retriever_instance = get_retriever()
+
+    except Exception as e:
+
+        print("\nPINECONE / EMBEDDING ERROR:")
+        print(e)
+
+        return (
+            "Sorry, the medical search service is "
+            "temporarily unavailable."
+        )
+
+
+    # =====================================================
+    # 2. Retrieve Information from Pinecone
+    # =====================================================
+
+    try:
+
+        docs = retriever_instance.invoke(msg)
+
+    except Exception as e:
+
+        print("\nPINECONE SEARCH ERROR:")
+        print(e)
+
+        docs = []
+
 
     print("\nPDF RESULTS:", len(docs))
 
+
+    # =====================================================
+    # Print Retrieved Documents
+    # =====================================================
 
     for i, doc in enumerate(docs):
 
@@ -147,30 +197,57 @@ def chat():
         )
 
         print(
+            "Page:",
+            doc.metadata.get("page")
+        )
+
+        print(
             doc.page_content[:300]
         )
 
 
     # =====================================================
-    # 2. Fetch information from MedlinePlus API
+    # 3. Fetch Information from MedlinePlus
     # =====================================================
 
-    api_results = search_medlineplus(msg)
+    try:
 
-    print("\nMEDLINEPLUS RESULTS:", len(api_results))
+        api_results = search_medlineplus(msg)
+
+    except Exception as e:
+
+        print("\nMEDLINEPLUS API ERROR:")
+        print(e)
+
+        api_results = []
 
 
-    # =====================================================
-    # 3. Convert MedlinePlus results into text
-    # =====================================================
-
-    api_context = format_medlineplus(
-        api_results
+    print(
+        "\nMEDLINEPLUS RESULTS:",
+        len(api_results)
     )
 
 
     # =====================================================
-    # 4. Convert PDF documents into text
+    # 4. Convert MedlinePlus Results to Text
+    # =====================================================
+
+    try:
+
+        api_context = format_medlineplus(
+            api_results
+        )
+
+    except Exception as e:
+
+        print("\nMEDLINEPLUS FORMAT ERROR:")
+        print(e)
+
+        api_context = "No MedlinePlus information available."
+
+
+    # =====================================================
+    # 5. Convert PDF Documents to Text
     # =====================================================
 
     if docs:
@@ -182,11 +259,14 @@ def chat():
 
     else:
 
-        pdf_context = "No relevant information found in the PDF."
+        pdf_context = (
+            "No relevant information found "
+            "in the medical PDF."
+        )
 
 
     # =====================================================
-    # 5. Combine PDF + MedlinePlus
+    # 6. Combine PDF + MedlinePlus
     # =====================================================
 
     combined_context = f"""
@@ -208,7 +288,7 @@ MEDLINEPLUS MEDICAL INFORMATION
 
 
     # =====================================================
-    # Debug: Show combined context
+    # Debug Context
     # =====================================================
 
     print("\n======================================")
@@ -221,7 +301,7 @@ MEDLINEPLUS MEDICAL INFORMATION
 
 
     # =====================================================
-    # 6. Check if both sources are empty
+    # 7. Check if Both Sources Are Empty
     # =====================================================
 
     if not docs and not api_results:
@@ -233,7 +313,7 @@ MEDLINEPLUS MEDICAL INFORMATION
 
 
     # =====================================================
-    # 7. Create final prompt
+    # 8. Create Final Prompt
     # =====================================================
 
     final_messages = prompt.format_messages(
@@ -243,16 +323,28 @@ MEDLINEPLUS MEDICAL INFORMATION
 
 
     # =====================================================
-    # 8. Send PDF + API context to LLM
+    # 9. Send Context to Groq
     # =====================================================
 
-    response = llm.invoke(
-        final_messages
-    )
+    try:
+
+        response = llm.invoke(
+            final_messages
+        )
+
+    except Exception as e:
+
+        print("\nGROQ ERROR:")
+        print(e)
+
+        return (
+            "Sorry, I am unable to generate an answer "
+            "right now. Please try again."
+        )
 
 
     # =====================================================
-    # 9. Return final answer
+    # 10. Return Final Answer
     # =====================================================
 
     return response.content
@@ -262,16 +354,11 @@ MEDLINEPLUS MEDICAL INFORMATION
 # Run Flask
 # =========================================================
 
-# if __name__ == "__main__":
-
-#     app.run(
-#         host="127.0.0.1",
-#         port=5000,
-#         debug=True
-#     )
-
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+
+    port = int(
+        os.environ.get("PORT", 5000)
+    )
 
     app.run(
         host="0.0.0.0",

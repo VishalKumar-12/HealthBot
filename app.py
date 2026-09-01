@@ -43,25 +43,38 @@ embedding = download_embeddings()
 # Connect to Existing Pinecone Index
 # =========================================================
 
-# index_name = "healthbot-multilingual"
 index_name = "healthbot-multilingual-384"
 
-docsearch = PineconeVectorStore(
-    index_name=index_name,
-    embedding=embedding,
-)
+embedding = None
+docsearch = None
+retriever = None
 
 
-# =========================================================
-# Retriever
-# =========================================================
+def get_retriever():
 
-retriever = docsearch.as_retriever(
-    search_type="similarity",
-    search_kwargs={
-        "k": 6
-    }
-)
+    global embedding
+    global docsearch
+    global retriever
+
+    if retriever is None:
+
+        print("Loading embedding model...")
+
+        embedding = download_embeddings()
+
+        docsearch = PineconeVectorStore(
+            index_name=index_name,
+            embedding=embedding
+        )
+
+        retriever = docsearch.as_retriever(
+            search_type="similarity",
+            search_kwargs={
+                "k": 4
+            }
+        )
+
+    return retriever
 
 
 # =========================================================

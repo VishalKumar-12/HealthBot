@@ -30,8 +30,7 @@ embedding = download_embeddings()
 
 # index_name = "healthbot"
 # index_name = "healthbot-multilingual"
-index_name = "healthbot-multilingual-v2"
-
+index_name = "healthbot-multilingual-384"
 
 if not pc.has_index(index_name):
     pc.create_index(

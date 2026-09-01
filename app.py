@@ -44,7 +44,7 @@ embedding = download_embeddings()
 # =========================================================
 
 # index_name = "healthbot-multilingual"
-index_name = "healthbot-multilingual-v2"
+index_name = "healthbot-multilingual-384"
 
 docsearch = PineconeVectorStore(
     index_name=index_name,

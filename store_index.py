@@ -29,7 +29,8 @@ print(f"Total Chunks Created: {len(texts_chunk)}")
 embedding = download_embeddings()
 
 # index_name = "healthbot"
-index_name = "healthbot-multilingual"
+# index_name = "healthbot-multilingual"
+index_name = "healthbot-multilingual-v2"
 
 
 if not pc.has_index(index_name):

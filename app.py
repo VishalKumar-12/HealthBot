@@ -43,7 +43,8 @@ embedding = download_embeddings()
 # Connect to Existing Pinecone Index
 # =========================================================
 
-index_name = "healthbot-multilingual"
+# index_name = "healthbot-multilingual"
+index_name = "healthbot-multilingual-v2"
 
 docsearch = PineconeVectorStore(
     index_name=index_name,
@@ -247,6 +248,14 @@ MEDLINEPLUS MEDICAL INFORMATION
 # =========================================================
 # Run Flask
 # =========================================================
+
+# if __name__ == "__main__":
+
+#     app.run(
+#         host="127.0.0.1",
+#         port=5000,
+#         debug=True
+#     )
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))

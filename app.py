@@ -4,8 +4,6 @@ import os
 
 from src.Ingestion import download_embeddings
 from src.prompt import system_prompt
-from src.api.medlineplus import search_medlineplus
-from src.api.context import format_medlineplus
 
 from langchain_pinecone import PineconeVectorStore
 from langchain_groq import ChatGroq
@@ -39,6 +37,16 @@ app = Flask(__name__)
 # Pinecone Configuration
 # =========================================================
 
+<<<<<<< HEAD
+=======
+embedding = download_embeddings()
+
+
+# =========================================================
+# Connect to Existing Pinecone Index
+# =========================================================
+
+>>>>>>> e21b5b2 (Update medical chatbot)
 index_name = "healthbot-multilingual-384"
 
 embedding = None
@@ -207,6 +215,7 @@ def chat():
 
 
     # =====================================================
+<<<<<<< HEAD
     # 3. Fetch Information from MedlinePlus
     # =====================================================
 
@@ -248,6 +257,9 @@ def chat():
 
     # =====================================================
     # 5. Convert PDF Documents to Text
+=======
+    # 2. Convert PDF documents into text
+>>>>>>> e21b5b2 (Update medical chatbot)
     # =====================================================
 
     if docs:
@@ -266,6 +278,7 @@ def chat():
 
 
     # =====================================================
+<<<<<<< HEAD
     # 6. Combine PDF + MedlinePlus
     # =====================================================
 
@@ -305,25 +318,39 @@ MEDLINEPLUS MEDICAL INFORMATION
     # =====================================================
 
     if not docs and not api_results:
+=======
+    # 3. Check if PDF information is available
+    # =====================================================
+
+    if not docs:
+>>>>>>> e21b5b2 (Update medical chatbot)
 
         return (
             "I don't know about this because it is not "
-            "available in my medical sources."
+            "available in my medical PDF."
         )
 
 
     # =====================================================
+<<<<<<< HEAD
     # 8. Create Final Prompt
+=======
+    # 4. Create final prompt
+>>>>>>> e21b5b2 (Update medical chatbot)
     # =====================================================
 
     final_messages = prompt.format_messages(
-        context=combined_context,
+        context=pdf_context,
         input=msg
     )
 
 
     # =====================================================
+<<<<<<< HEAD
     # 9. Send Context to Groq
+=======
+    # 5. Send PDF context to LLM
+>>>>>>> e21b5b2 (Update medical chatbot)
     # =====================================================
 
     try:
@@ -344,7 +371,11 @@ MEDLINEPLUS MEDICAL INFORMATION
 
 
     # =====================================================
+<<<<<<< HEAD
     # 10. Return Final Answer
+=======
+    # 6. Return final answer
+>>>>>>> e21b5b2 (Update medical chatbot)
     # =====================================================
 
     return response.content
@@ -356,9 +387,13 @@ MEDLINEPLUS MEDICAL INFORMATION
 
 if __name__ == "__main__":
 
+<<<<<<< HEAD
     port = int(
         os.environ.get("PORT", 5000)
     )
+=======
+    port = int(os.environ.get("PORT", 5000))
+>>>>>>> e21b5b2 (Update medical chatbot)
 
     app.run(
         host="0.0.0.0",

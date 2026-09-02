@@ -38,7 +38,8 @@ app = Flask(__name__)
 # Pinecone Configuration
 # =========================================================
 
-index_name = "healthbot-multilingual-384"
+# index_name = "healthbot-multilingual-384"
+index_name = "healthbot-multilingual"
 
 # Lazy loading
 embedding = None

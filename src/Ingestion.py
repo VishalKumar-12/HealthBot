@@ -69,9 +69,27 @@ def text_split(minimal_docs):
 # Download / Load Embedding Model
 # =========================================================
 
+# def download_embeddings():
+
+#     # model_name = "sentence-transformers/all-MiniLM-L6-v2"
+#     model_name = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+
+
+#     embeddings = HuggingFaceEmbeddings(
+#         model_name=model_name,
+#         model_kwargs={
+#             "device": "cpu"
+#         },
+#         encode_kwargs={
+#             "normalize_embeddings": True
+#         }
+#     )
+
+#     return embeddings
+
 def download_embeddings():
 
-    model_name = "sentence-transformers/all-MiniLM-L6-v2"
+    model_name = "BAAI/bge-m3"
 
     embeddings = HuggingFaceEmbeddings(
         model_name=model_name,

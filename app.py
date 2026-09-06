@@ -1,4 +1,3 @@
-
 import os
 import urllib.parse
 
@@ -32,14 +31,19 @@ try:
     GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 
 except Exception:
-
     PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 
+# Check API keys
 if not PINECONE_API_KEY or not GROQ_API_KEY:
 
-    st.error("API key is missing.")
+    st.error("❌ API key is missing.")
+
+    st.info(
+        "Please add PINECONE_API_KEY and GROQ_API_KEY "
+        "to Streamlit Secrets or environment variables."
+    )
 
     st.stop()
 
@@ -51,14 +55,17 @@ if not PINECONE_API_KEY or not GROQ_API_KEY:
 @st.cache_resource
 def get_retriever():
 
+    # Load embedding model
     embedding = download_embeddings()
 
+    # Connect Pinecone
     vector_store = PineconeVectorStore(
         index_name="healthbot-multilingual-v2-384",
         embedding=embedding,
         pinecone_api_key=PINECONE_API_KEY
     )
 
+    # Create retriever
     retriever = vector_store.as_retriever(
         search_type="similarity",
         search_kwargs={
@@ -84,10 +91,11 @@ def get_llm():
 
 
 # =========================================================
-# INITIALIZE
+# INITIALIZE MODELS
 # =========================================================
 
 retriever = get_retriever()
+
 llm = get_llm()
 
 
@@ -108,12 +116,13 @@ prompt = ChatPromptTemplate.from_messages([
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+
 if "docs" not in st.session_state:
     st.session_state.docs = []
 
 
 # =========================================================
-# UI
+# HEADER
 # =========================================================
 
 st.title("🩺 HealthBot")
@@ -147,13 +156,13 @@ user_input = st.chat_input(
 
 
 # =========================================================
-# PROCESS QUESTION
+# QUESTION PROCESSING
 # =========================================================
 
 if user_input:
 
     # -----------------------------------------------------
-    # USER MESSAGE
+    # ADD USER MESSAGE
     # -----------------------------------------------------
 
     st.session_state.messages.append({
@@ -161,6 +170,7 @@ if user_input:
         "content": user_input
     })
 
+    # Display user message
     with st.chat_message("user"):
 
         st.markdown(user_input)
@@ -183,6 +193,10 @@ if user_input:
     ]
 
 
+    # -----------------------------------------------------
+    # GREETING RESPONSE
+    # -----------------------------------------------------
+
     if user_input.lower().strip() in greetings:
 
         answer = (
@@ -190,6 +204,7 @@ if user_input:
             "How can I help you with your medical questions?"
         )
 
+        # Clear sources for greeting
         st.session_state.docs = []
 
         with st.chat_message("assistant"):
@@ -205,81 +220,100 @@ if user_input:
 
         with st.chat_message("assistant"):
 
-            with st.spinner(
-                "🔎 Searching medical documents..."
-            ):
+            try:
 
-                try:
+                # -----------------------------------------
+                # SEARCH DOCUMENTS
+                # -----------------------------------------
 
-                    # Retrieve documents
+                with st.spinner(
+                    "🔎 Searching medical documents..."
+                ):
+
                     docs = retriever.invoke(user_input)
 
 
-                    # Save retrieved documents
-                    st.session_state.docs = docs
+                # Save documents
+                st.session_state.docs = docs
 
 
-                    # -------------------------------------------------
-                    # BUILD CONTEXT
-                    # -------------------------------------------------
+                # -----------------------------------------
+                # BUILD CONTEXT
+                # -----------------------------------------
 
-                    context_parts = []
-
-                    for doc in docs:
-
-                        page = int(
-                            doc.metadata.get("page", 0)
-                        ) + 1
-
-                        context_parts.append(
-                            f"[PDF Page {page}]\n"
-                            f"{doc.page_content}"
-                        )
+                context_parts = []
 
 
-                    context = "\n\n".join(
-                        context_parts
+                for doc in docs:
+
+                    page = doc.metadata.get(
+                        "page",
+                        0
+                    )
+
+                    try:
+                        display_page = int(page) + 1
+                    except:
+                        display_page = 1
+
+
+                    context_parts.append(
+                        f"[PDF Page {display_page}]\n"
+                        f"{doc.page_content}"
                     )
 
 
-                    # -------------------------------------------------
-                    # CREATE PROMPT
-                    # -------------------------------------------------
-
-                    messages = prompt.format_messages(
-                        context=context,
-                        input=user_input
-                    )
+                context = "\n\n".join(
+                    context_parts
+                )
 
 
-                    # -------------------------------------------------
-                    # GENERATE ANSWER
-                    # -------------------------------------------------
+                # -----------------------------------------
+                # CREATE PROMPT
+                # -----------------------------------------
+
+                messages = prompt.format_messages(
+                    context=context,
+                    input=user_input
+                )
+
+
+                # -----------------------------------------
+                # GENERATE ANSWER
+                # -----------------------------------------
+
+                with st.spinner(
+                    "🤖 Generating answer..."
+                ):
 
                     response = llm.invoke(messages)
 
                     answer = response.content
 
 
-                    # -------------------------------------------------
-                    # DISPLAY ANSWER
-                    # -------------------------------------------------
+                # -----------------------------------------
+                # DISPLAY ANSWER
+                # -----------------------------------------
 
-                    st.markdown(
-                        answer,
-                        unsafe_allow_html=True
-                    )
+                st.markdown(
+                    answer,
+                    unsafe_allow_html=True
+                )
 
 
-                except Exception as e:
+            except Exception as e:
 
-                    st.error(
-                        "❌ Unable to generate answer."
-                    )
+                answer = (
+                    "❌ Sorry, I was unable to generate "
+                    "an answer."
+                )
 
-                    st.exception(e)
+                st.error(answer)
 
-                    st.stop()
+                st.exception(e)
+
+                # Don't stop the whole app
+                st.session_state.docs = []
 
 
     # =====================================================
@@ -288,18 +322,20 @@ if user_input:
 
     if st.session_state.docs:
 
-        shown = set()
+        # Track already displayed pages
+        shown_pages = set()
 
 
         with st.expander("📖 Sources"):
 
             for doc in st.session_state.docs:
 
-                # -------------------------------------------------
+                # -----------------------------------------
                 # GET PAGE
-                # -------------------------------------------------
+                # -----------------------------------------
 
                 page = doc.metadata.get("page")
+
 
                 if page is None:
                     continue
@@ -307,6 +343,7 @@ if user_input:
 
                 try:
 
+                    # Pinecone/PDF pages are zero-based
                     display_page = int(page) + 1
 
                 except:
@@ -314,53 +351,27 @@ if user_input:
                     continue
 
 
-                # -------------------------------------------------
-                # PDF NAME
-                # -------------------------------------------------
-
-                pdf_path = doc.metadata.get(
-                    "source",
-                    "Medical_book.pdf"
-                )
-
-
-                pdf_path = str(pdf_path).replace(
-                    "\\",
-                    "/"
-                )
-
-
-                filename = os.path.basename(
-                    pdf_path
-                )
-
-
-                # If metadata doesn't contain filename
-                if not filename:
-
-                    filename = "Medical_book.pdf"
-
-
-                # -------------------------------------------------
+                # -----------------------------------------
                 # REMOVE DUPLICATE PAGES
-                # -------------------------------------------------
+                # -----------------------------------------
 
-                key = (
-                    filename,
-                    display_page
-                )
-
-
-                if key in shown:
+                if display_page in shown_pages:
                     continue
 
 
-                shown.add(key)
+                shown_pages.add(display_page)
 
 
-                # -------------------------------------------------
-                # GITHUB RAW PDF
-                # -------------------------------------------------
+                # -----------------------------------------
+                # PDF FILE
+                # -----------------------------------------
+
+                filename = "Medical_book.pdf"
+
+
+                # -----------------------------------------
+                # GITHUB RAW PDF URL
+                # -----------------------------------------
 
                 pdf_url = (
                     "https://raw.githubusercontent.com/"
@@ -369,16 +380,19 @@ if user_input:
                 )
 
 
-                # Encode complete PDF URL
+                # -----------------------------------------
+                # ENCODE PDF URL
+                # -----------------------------------------
+
                 encoded_pdf_url = urllib.parse.quote(
                     pdf_url,
                     safe=""
                 )
 
 
-                # -------------------------------------------------
-                # PDF.JS VIEWER
-                # -------------------------------------------------
+                # -----------------------------------------
+                # PDF.JS VIEWER URL
+                # -----------------------------------------
 
                 viewer_url = (
                     "https://mozilla.github.io/pdf.js/web/viewer.html"
@@ -387,70 +401,36 @@ if user_input:
                 )
 
 
-                # -------------------------------------------------
-                # SOURCE CARD
-                # -------------------------------------------------
+                # -----------------------------------------
+                # SOURCE INFORMATION
+                # -----------------------------------------
 
                 st.markdown(
-                    f"""
-                    <div style="
-                        border: 1px solid #ddd;
-                        border-radius: 10px;
-                        padding: 12px;
-                        margin-bottom: 10px;
-                    ">
-
-                        <div style="
-                            font-size: 16px;
-                            font-weight: 600;
-                            margin-bottom: 8px;
-                        ">
-                            📄 {filename}
-                        </div>
-
-                        <div style="
-                            margin-bottom: 10px;
-                            color: #666;
-                        ">
-                            Page {display_page}
-                        </div>
-
-                        <a
-                            href="{viewer_url}"
-                            target="_blank"
-                            style="
-                                text-decoration: none;
-                            "
-                        >
-
-                            <button style="
-                                width: 100%;
-                                padding: 10px;
-                                border-radius: 8px;
-                                border: 1px solid #ccc;
-                                background: transparent;
-                                cursor: pointer;
-                                font-size: 15px;
-                            ">
-
-                                📄 Open PDF — Page {display_page}
-
-                            </button>
-
-                        </a>
-
-                    </div>
-                    """,
-                    unsafe_allow_html=True
+                    f"📄 **{filename}**  \n"
+                    f"Page **{display_page}**"
                 )
 
 
+                # -----------------------------------------
+                # OPEN PDF BUTTON
+                # -----------------------------------------
+
+                st.link_button(
+                    f"📄 Open PDF — Page {display_page}",
+                    viewer_url,
+                    use_container_width=True
+                )
+
+
+                # Separator
+                st.divider()
+
+
     # =====================================================
-    # SAVE ASSISTANT MESSAGE
+    # SAVE ASSISTANT RESPONSE
     # =====================================================
 
     st.session_state.messages.append({
         "role": "assistant",
         "content": answer
     })
-

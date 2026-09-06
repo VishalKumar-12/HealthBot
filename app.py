@@ -10,6 +10,7 @@ from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 
 
+# Page configuration
 st.set_page_config(
     page_title="HealthBot",
     page_icon="🩺",
@@ -25,6 +26,7 @@ except Exception:
     PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
+
 if not PINECONE_API_KEY or not GROQ_API_KEY:
     st.error("❌ API key is missing.")
     st.stop()
@@ -33,6 +35,7 @@ if not PINECONE_API_KEY or not GROQ_API_KEY:
 # Retriever
 @st.cache_resource
 def get_retriever():
+
     embedding = download_embeddings()
 
     vector_store = PineconeVectorStore(
@@ -50,6 +53,7 @@ def get_retriever():
 # LLM
 @st.cache_resource
 def get_llm():
+
     return ChatGroq(
         model="openai/gpt-oss-20b",
         api_key=GROQ_API_KEY,
@@ -60,6 +64,8 @@ def get_llm():
 retriever = get_retriever()
 llm = get_llm()
 
+
+# Prompt
 prompt = ChatPromptTemplate.from_messages([
     ("system", system_prompt),
     ("human", "{input}")
@@ -81,6 +87,7 @@ st.write("AI Medical Assistant")
 
 # Chat history
 for message in st.session_state.messages:
+
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
@@ -93,13 +100,16 @@ if user_input:
 
     answer = ""
 
+    # Save user message
     st.session_state.messages.append({
         "role": "user",
         "content": user_input
     })
 
+    # Display user message
     with st.chat_message("user"):
         st.markdown(user_input)
+
 
     greetings = {
         "hi",
@@ -113,6 +123,7 @@ if user_input:
         "namaste"
     }
 
+
     # Greeting
     if user_input.lower().strip() in greetings:
 
@@ -123,17 +134,23 @@ if user_input:
         with st.chat_message("assistant"):
             st.markdown(answer)
 
+
     # Medical question
     else:
 
         with st.chat_message("assistant"):
 
             try:
+
+                # Retrieve documents
                 with st.spinner("🔎 Searching medical documents..."):
+
                     docs = retriever.invoke(user_input)
 
                 st.session_state.docs = docs
 
+
+                # No documents found
                 if not docs:
 
                     answer = (
@@ -143,8 +160,10 @@ if user_input:
 
                     st.warning(answer)
 
+
                 else:
 
+                    # Create context
                     context_parts = []
 
                     for doc in docs:
@@ -156,6 +175,7 @@ if user_input:
                         except Exception:
                             page_number = 1
 
+
                         pdf_name = (
                             doc.metadata.get("source")
                             or doc.metadata.get("file_name")
@@ -165,23 +185,34 @@ if user_input:
 
                         pdf_name = os.path.basename(str(pdf_name))
 
+
                         context_parts.append(
                             f"[PDF: {pdf_name} | Page {page_number}]\n"
                             f"{doc.page_content}"
                         )
 
+
                     context = "\n\n".join(context_parts)
 
+
+                    # Create prompt
                     messages = prompt.format_messages(
                         context=context,
                         input=user_input
                     )
 
+
+                    # Generate answer
                     with st.spinner("🤖 Generating answer..."):
+
                         response = llm.invoke(messages)
+
                         answer = response.content
 
+
+                    # Display answer
                     st.markdown(answer)
+
 
             except Exception as e:
 
@@ -191,7 +222,9 @@ if user_input:
                 )
 
                 st.error(answer)
+
                 st.exception(e)
+
                 st.session_state.docs = []
 
 
@@ -200,7 +233,7 @@ if user_input:
 
         shown_sources = set()
 
-        with st.expander("📖 Sources"):
+        with st.expander("📖 Sources", expanded=True):
 
             for doc in st.session_state.docs:
 
@@ -214,6 +247,7 @@ if user_input:
                 except Exception:
                     continue
 
+
                 pdf_name = (
                     doc.metadata.get("source")
                     or doc.metadata.get("file_name")
@@ -223,42 +257,54 @@ if user_input:
 
                 pdf_name = os.path.basename(str(pdf_name))
 
-                source_key = (pdf_name, display_page)
+
+                # Avoid duplicate PDF + page
+                source_key = (
+                    pdf_name,
+                    display_page
+                )
 
                 if source_key in shown_sources:
                     continue
 
                 shown_sources.add(source_key)
 
+
+                # GitHub PDF URL
                 encoded_pdf_name = urllib.parse.quote(
                     pdf_name,
                     safe=""
                 )
 
                 pdf_url = (
-                    "https://raw.githubusercontent.com/"
-                    "VishalKumar-12/HealthBot/main/"
+                    "https://github.com/"
+                    "VishalKumar-12/HealthBot/blob/main/"
                     f"data/{encoded_pdf_name}"
-                )
-
-                viewer_url = (
-                    "https://mozilla.github.io/pdf.js/web/viewer.html"
-                    f"?file={urllib.parse.quote(pdf_url, safe='')}"
                     f"#page={display_page}"
                 )
 
-                st.markdown(f"📄 **{pdf_name}**")
-                st.caption(f"Page {display_page}")
 
+                # Source information
+                st.markdown(
+                    f"📄 **{pdf_name}**"
+                )
+
+                st.caption(
+                    f"Page {display_page}"
+                )
+
+
+                # Open PDF
                 st.link_button(
                     f"📖 Open {pdf_name} — Page {display_page}",
-                    viewer_url,
+                    pdf_url,
                     use_container_width=True
                 )
 
 
-    # Save assistant response
+    # Save assistant message
     if answer:
+
         st.session_state.messages.append({
             "role": "assistant",
             "content": answer

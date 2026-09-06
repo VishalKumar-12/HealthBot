@@ -129,19 +129,25 @@ user_input = st.chat_input(
 
 
 # =========================================================
-# USER QUESTION
+# PROCESS QUESTION
 # =========================================================
 
 if user_input:
 
+    # -----------------------------------------------------
     # Save user message
+    # -----------------------------------------------------
+
     st.session_state.messages.append({
         "role": "user",
         "content": user_input
     })
 
 
+    # -----------------------------------------------------
     # Display user message
+    # -----------------------------------------------------
+
     with st.chat_message("user"):
 
         st.markdown(user_input)
@@ -166,7 +172,10 @@ if user_input:
 
     if user_input.lower().strip() in greetings:
 
-        answer = "👋 Hello! I am HealthBot. How can I help you?"
+        answer = (
+            "👋 Hello! I am HealthBot. "
+            "How can I help you?"
+        )
 
 
     # =====================================================
@@ -184,7 +193,7 @@ if user_input:
                 try:
 
                     # -------------------------------------
-                    # Retrieve documents from Pinecone
+                    # Search Pinecone
                     # -------------------------------------
 
                     docs = retriever.invoke(user_input)
@@ -196,7 +205,8 @@ if user_input:
 
                     context = "\n\n".join(
 
-                        f"[PDF Page {doc.metadata.get('page', 0) + 1}]\n"
+                        f"[PDF Page "
+                        f"{doc.metadata.get('page', 0) + 1}]\n"
                         f"{doc.page_content}"
 
                         for doc in docs
@@ -204,18 +214,13 @@ if user_input:
 
 
                     # -------------------------------------
-                    # Create messages
+                    # Ask LLM
                     # -------------------------------------
 
                     messages = prompt.format_messages(
                         context=context,
                         input=user_input
                     )
-
-
-                    # -------------------------------------
-                    # Generate answer
-                    # -------------------------------------
 
                     response = llm.invoke(messages)
 
@@ -234,7 +239,7 @@ if user_input:
 
 
             # =================================================
-            # ANSWER
+            # DISPLAY ANSWER
             # =================================================
 
             st.markdown(
@@ -254,15 +259,7 @@ if user_input:
             for doc in docs:
 
                 # -----------------------------------------
-                # Pinecone page number
-                #
-                # Usually LangChain PDF page indexing
-                # starts from 0.
-                #
-                # Therefore:
-                # 0 -> Page 1
-                # 1 -> Page 2
-                # 519 -> Page 520
+                # Get page number
                 # -----------------------------------------
 
                 page = int(
@@ -274,28 +271,44 @@ if user_input:
                 # Avoid duplicate pages
                 # -----------------------------------------
 
-                if page not in seen_pages:
-
-                    # -------------------------------------
-                    # PDF URL
-                    #
-                    # #page=520 tells the browser PDF
-                    # viewer to open Page 520.
-                    # -------------------------------------
-
-                    pdf_url = (
-                        "https://raw.githubusercontent.com/"
-                        "VishalKumar-12/HealthBot/main/"
-                        f"data/Medical_book.pdf#page={page}"
-                    )
+                if page in seen_pages:
+                    continue
 
 
-                    sources.append(
-                        (page, pdf_url)
-                    )
+                seen_pages.add(page)
 
 
-                    seen_pages.add(page)
+                # -----------------------------------------
+                # PDF filename
+                # -----------------------------------------
+
+                source = doc.metadata.get(
+                    "source",
+                    "Medical_book.pdf"
+                )
+
+                filename = os.path.basename(source)
+
+
+                # -----------------------------------------
+                # PDF URL
+                #
+                # Streamlit static folder:
+                #
+                # /app/static/Medical_book.pdf
+                #
+                # #page=X opens exact PDF page
+                # -----------------------------------------
+
+                pdf_url = (
+                    f"/app/static/{filename}"
+                    f"#page={page}"
+                )
+
+
+                sources.append(
+                    (page, pdf_url)
+                )
 
 
             # =================================================
@@ -310,17 +323,23 @@ if user_input:
 
                         st.markdown(
                             f'''
-                            <a href="{pdf_url}" target="_blank">
-                                📄 Page {page} — Medical_book.pdf
+                            <a href="{pdf_url}"
+                               target="_blank"
+                               style="
+                               text-decoration:none;
+                               font-size:16px;
+                               ">
+                               📄 Page {page} —
+                               Medical_book.pdf
                             </a>
                             ''',
                             unsafe_allow_html=True
                         )
 
 
-    # =========================================================
+    # =====================================================
     # GREETING RESPONSE
-    # =========================================================
+    # =====================================================
 
     if user_input.lower().strip() in greetings:
 
@@ -329,9 +348,9 @@ if user_input:
             st.markdown(answer)
 
 
-    # =========================================================
+    # =====================================================
     # SAVE ASSISTANT MESSAGE
-    # =========================================================
+    # =====================================================
 
     st.session_state.messages.append({
         "role": "assistant",

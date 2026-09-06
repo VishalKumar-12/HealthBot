@@ -144,43 +144,85 @@ if user_input:
             )
 
 
-            # Sources
-            sources = []
-            seen_pages = set()
+           # =========================================================
+# Sources
+# =========================================================
 
-            for doc in docs:
+sources = []
+seen_sources = set()
 
-                page = int(
-                    doc.metadata.get("page", 0)
-                ) + 1
+for doc in docs:
 
-                if page not in seen_pages:
+    # Pinecone page number starts from 0
+    page = int(
+        doc.metadata.get("page", 0)
+    ) + 1
 
-                    pdf_url = (
-                        "https://raw.githubusercontent.com/"
-                        "VishalKumar-12/HealthBot/main/"
-                        f"data/Medical_book.pdf#page={page}"
-                    )
+    # Actual PDF source stored during ingestion
+    source = doc.metadata.get(
+        "source",
+        ""
+    )
 
-                    sources.append(
-                        (page, pdf_url)
-                    )
+    if not source:
+        continue
 
-                    seen_pages.add(page)
+    # Windows path -> normal path
+    source = source.replace(
+        "\\",
+        "/"
+    )
+
+    # Get only PDF filename
+    filename = os.path.basename(
+        source
+    )
+
+    # Avoid duplicate PDF + page
+    key = (
+        filename,
+        page
+    )
+
+    if key in seen_sources:
+        continue
+
+    # GitHub PDF
+    pdf_url = (
+        "https://raw.githubusercontent.com/"
+        "VishalKumar-12/HealthBot/main/"
+        f"data/{filename}#page={page}"
+    )
+
+    sources.append(
+        (
+            page,
+            filename,
+            pdf_url
+        )
+    )
+
+    seen_sources.add(key)
 
 
-            if sources:
+# =========================================================
+# Display Sources
+# =========================================================
 
-                with st.expander("📖 Sources"):
+if sources:
 
-                    for page, pdf_url in sources:
+    with st.expander("📖 Sources"):
 
-                        st.markdown(
-                            f'<a href="{pdf_url}" target="_blank">'
-                            f'📄 Page {page} — Medical_book.pdf'
-                            f'</a>',
-                            unsafe_allow_html=True
-                        )
+        for page, filename, pdf_url in sources:
+
+            st.markdown(
+                f'''
+                <a href="{pdf_url}" target="_blank">
+                    📄 Page {page} — {filename}
+                </a>
+                ''',
+                unsafe_allow_html=True
+            )
 
 
     if user_input.lower().strip() in greetings:

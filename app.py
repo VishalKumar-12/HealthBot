@@ -24,7 +24,8 @@ if not GROQ_API_KEY:
 
 app = Flask(__name__)
 
-INDEX_NAME = "healthbot-multilingual-384"
+# INDEX_NAME = "healthbot-multilingual-384"
+INDEX_NAME = "healthbot-multilingual-v2-384"
 
 
 retriever = None

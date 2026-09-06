@@ -24,8 +24,9 @@ if not PINECONE_API_KEY:
 # Pinecone
 pc = Pinecone(api_key=PINECONE_API_KEY)
 
-index_name = "healthbot-multilingual-384"
+# index_name = "healthbot-multilingual-384"
 
+index_name = "healthbot-multilingual-v2-384"
 
 # Load PDFs
 documents = load_pdf_files("data")

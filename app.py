@@ -1,4 +1,5 @@
 import os
+import base64
 import streamlit as st
 
 from src.Ingestion import download_embeddings
@@ -34,8 +35,15 @@ except Exception:
 
 
 if not PINECONE_API_KEY or not GROQ_API_KEY:
-    st.error("❌ API key is missing. Please add your API keys in Streamlit Secrets.")
+    st.error("❌ API key is missing.")
     st.stop()
+
+
+# =========================================================
+# PDF PATH
+# =========================================================
+
+PDF_FOLDER = "data"
 
 
 # =========================================================
@@ -89,6 +97,67 @@ prompt = ChatPromptTemplate.from_messages([
 
 
 # =========================================================
+# PDF FILE
+# =========================================================
+
+def get_pdf_path(source):
+
+    if not source:
+        return None
+
+    # Convert Windows path to normal path
+    source = source.replace("\\", "/")
+
+    # Get only filename
+    filename = os.path.basename(source)
+
+    pdf_path = os.path.join(
+        PDF_FOLDER,
+        filename
+    )
+
+    if os.path.exists(pdf_path):
+        return pdf_path
+
+    return None
+
+
+# =========================================================
+# PDF PAGE LINK
+# =========================================================
+
+def create_pdf_link(source, page):
+
+    pdf_path = get_pdf_path(source)
+
+    if not pdf_path:
+        return None
+
+    try:
+
+        with open(pdf_path, "rb") as pdf_file:
+            pdf_bytes = pdf_file.read()
+
+        base64_pdf = base64.b64encode(
+            pdf_bytes
+        ).decode("utf-8")
+
+        pdf_url = (
+            "data:application/pdf;base64,"
+            + base64_pdf
+            + f"#page={page}"
+        )
+
+        return pdf_url
+
+    except Exception as e:
+
+        print("PDF Error:", e)
+
+        return None
+
+
+# =========================================================
 # SESSION STATE
 # =========================================================
 
@@ -97,29 +166,16 @@ if "messages" not in st.session_state:
 
 
 # =========================================================
-# HEADER
-# =========================================================
-
-st.title("🩺 HealthBot")
-
-st.caption(
-    "AI Medical Assistant powered by RAG, Pinecone and Groq"
-)
-
-
-# =========================================================
 # SIDEBAR
 # =========================================================
 
 with st.sidebar:
 
-    st.header("🩺 HealthBot")
+    st.title("🩺 HealthBot")
 
     st.write(
-        """
-        Ask medical questions and get answers
-        based on the medical PDF knowledge base.
-        """
+        "AI Medical Assistant powered by "
+        "RAG, Pinecone and Groq."
     )
 
     st.divider()
@@ -129,12 +185,15 @@ with st.sidebar:
     st.write("✅ PDF-based answers")
     st.write("✅ RAG + Pinecone")
     st.write("✅ Multilingual support")
-    st.write("✅ Source page references")
+    st.write("✅ PDF page references")
     st.write("✅ AI-powered responses")
 
     st.divider()
 
-    if st.button("🗑️ Clear Chat", use_container_width=True):
+    if st.button(
+        "🗑️ Clear Chat",
+        use_container_width=True
+    ):
 
         st.session_state.messages = []
 
@@ -142,7 +201,18 @@ with st.sidebar:
 
 
 # =========================================================
-# DISPLAY CHAT HISTORY
+# HEADER
+# =========================================================
+
+st.title("🩺 HealthBot")
+
+st.caption(
+    "AI Medical Assistant • RAG + Pinecone + Groq"
+)
+
+
+# =========================================================
+# CHAT HISTORY
 # =========================================================
 
 for message in st.session_state.messages:
@@ -159,21 +229,29 @@ for message in st.session_state.messages:
 # USER INPUT
 # =========================================================
 
-msg = st.chat_input("Ask your medical question...")
+msg = st.chat_input(
+    "Ask your medical question..."
+)
 
+
+# =========================================================
+# CHAT
+# =========================================================
 
 if msg:
 
     msg = msg.strip()
 
     if not msg:
+
         st.warning("Please enter a question.")
+
         st.stop()
 
 
-    # -----------------------------------------------------
-    # SHOW USER MESSAGE
-    # -----------------------------------------------------
+    # =====================================================
+    # USER MESSAGE
+    # =====================================================
 
     st.session_state.messages.append({
         "role": "user",
@@ -181,12 +259,13 @@ if msg:
     })
 
     with st.chat_message("user"):
+
         st.markdown(msg)
 
 
-    # -----------------------------------------------------
-    # ASSISTANT RESPONSE
-    # -----------------------------------------------------
+    # =====================================================
+    # ASSISTANT MESSAGE
+    # =====================================================
 
     with st.chat_message("assistant"):
 
@@ -206,21 +285,27 @@ if msg:
             "namaste"
         ]:
 
-            answer = "👋 Hello! I am HealthBot. How can I help you?"
+            answer = (
+                "👋 Hello! I am HealthBot. "
+                "How can I help you?"
+            )
 
             st.markdown(answer)
 
+
         else:
 
-            # =================================================
+            # =============================================
             # SEARCH PDF
-            # =================================================
+            # =============================================
 
             try:
 
-                retriever = get_retriever()
+                with st.spinner(
+                    "🔍 Searching medical information..."
+                ):
 
-                docs = retriever.invoke(msg)
+                    docs = get_retriever().invoke(msg)
 
             except Exception as e:
 
@@ -241,32 +326,37 @@ if msg:
                 st.stop()
 
 
-            # =================================================
+            # =============================================
             # NO DOCUMENTS
-            # =================================================
+            # =============================================
 
             if not docs:
 
-                answer = "I don't have information about this topic."
+                answer = (
+                    "I don't have information "
+                    "about this topic."
+                )
 
                 st.markdown(answer)
 
+
             else:
 
-                # =================================================
+                # =========================================
                 # CREATE CONTEXT
-                # =================================================
+                # =========================================
 
                 context = "\n\n".join(
-                    f"[PDF Page {doc.metadata.get('page', 0) + 1}]\n"
+                    f"[PDF Page "
+                    f"{doc.metadata.get('page', 0) + 1}]\n"
                     f"{doc.page_content}"
                     for doc in docs
                 )
 
 
-                # =================================================
+                # =========================================
                 # ASK AI
-                # =================================================
+                # =========================================
 
                 messages = prompt.format_messages(
                     context=context,
@@ -275,7 +365,11 @@ if msg:
 
                 try:
 
-                    response = llm.invoke(messages)
+                    with st.spinner(
+                        "🤖 Generating answer..."
+                    ):
+
+                        response = llm.invoke(messages)
 
                     answer = response.content
 
@@ -284,8 +378,8 @@ if msg:
                     print("Groq Error:", e)
 
                     answer = (
-                        "Sorry, I am unable to generate "
-                        "an answer right now."
+                        "Sorry, I am unable to "
+                        "generate an answer right now."
                     )
 
                     st.error(answer)
@@ -298,9 +392,9 @@ if msg:
                     st.stop()
 
 
-                # =================================================
+                # =========================================
                 # UNKNOWN ANSWER
-                # =================================================
+                # =========================================
 
                 unknown = [
                     "don't know",
@@ -318,25 +412,29 @@ if msg:
 
                     st.markdown(answer)
 
+
                 else:
 
-                    # =================================================
+                    # =====================================
                     # DISPLAY ANSWER
-                    # =================================================
+                    # =====================================
 
                     st.markdown(answer)
 
 
-                    # =================================================
+                    # =====================================
                     # PDF SOURCES
-                    # =================================================
+                    # =====================================
 
                     sources = []
 
                     for doc in docs:
 
                         page = int(
-                            doc.metadata.get("page", 0)
+                            doc.metadata.get(
+                                "page",
+                                0
+                            )
                         ) + 1
 
                         source = doc.metadata.get(
@@ -346,50 +444,105 @@ if msg:
 
                         if source:
 
-                            filename = os.path.basename(source)
+                            # Normalize path
+                            source = source.replace(
+                                "\\",
+                                "/"
+                            )
+
+                            filename = os.path.basename(
+                                source
+                            )
 
                             sources.append(
-                                (filename, page)
+                                (
+                                    filename,
+                                    source,
+                                    page
+                                )
                             )
 
 
-                    # Remove duplicates
+                    # Remove duplicate sources
 
-                    sources = list(
-                        dict.fromkeys(sources)
-                    )
+                    unique_sources = []
+
+                    seen = set()
+
+                    for filename, source, page in sources:
+
+                        key = (
+                            filename,
+                            page
+                        )
+
+                        if key not in seen:
+
+                            seen.add(key)
+
+                            unique_sources.append(
+                                (
+                                    filename,
+                                    source,
+                                    page
+                                )
+                            )
 
 
-                    # =================================================
-                    # SOURCE DISPLAY
-                    # =================================================
+                    # =====================================
+                    # SHOW SOURCES
+                    # =====================================
 
-                    if sources:
+                    if unique_sources:
 
                         st.markdown("---")
 
-                        st.markdown("### 📖 Sources")
+                        st.markdown(
+                            "### 📖 Sources"
+                        )
 
-                        for filename, page in sources:
+                        for (
+                            filename,
+                            source,
+                            page
+                        ) in unique_sources:
 
-                            pdf_url = (
-                                f"/pdf/{filename}"
-                                f"#page={page}"
+                            pdf_link = create_pdf_link(
+                                source,
+                                page
                             )
 
-                            st.markdown(
-                                f"""
-                                📄 **PDF Page {page}**  
-                                """
-                                f"""[Open PDF Page {page}]({pdf_url})"""
-                            )
+                            if pdf_link:
+
+                                st.markdown(
+                                    f"""
+                                    <a
+                                        href="{pdf_link}"
+                                        target="_blank"
+                                        style="
+                                            text-decoration:none;
+                                            font-weight:500;
+                                        "
+                                    >
+                                        📄 PDF Page {page}
+                                    </a>
+                                    """,
+                                    unsafe_allow_html=True
+                                )
+
+                            else:
+
+                                st.write(
+                                    f"📄 PDF Page {page}"
+                                )
 
 
-        # =================================================
-        # SAVE ASSISTANT MESSAGE
-        # =================================================
+    # =====================================================
+    # SAVE ASSISTANT RESPONSE
+    # =====================================================
 
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": answer
-        })
+    st.session_state.messages.append({
+        "role": "assistant",
+        "content": answer
+    })
+

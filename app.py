@@ -1,3 +1,4 @@
+
 import os
 import streamlit as st
 
@@ -55,14 +56,10 @@ def get_retriever():
         pinecone_api_key=PINECONE_API_KEY
     )
 
-    retriever = vector_store.as_retriever(
+    return vector_store.as_retriever(
         search_type="similarity",
-        search_kwargs={
-            "k": 4
-        }
+        search_kwargs={"k": 4}
     )
-
-    return retriever
 
 
 # =========================================================
@@ -79,7 +76,9 @@ def get_llm():
     )
 
 
-# Load models
+# =========================================================
+# LOAD MODELS
+# =========================================================
 
 retriever = get_retriever()
 llm = get_llm()
@@ -103,12 +102,10 @@ st.markdown(
     """
     <style>
 
-    /* Main title */
-
     .main-title {
         font-size: 42px;
         font-weight: 700;
-        margin-bottom: 0px;
+        margin-bottom: 0;
     }
 
     .sub-title {
@@ -116,8 +113,6 @@ st.markdown(
         color: #777;
         margin-bottom: 25px;
     }
-
-    /* Source links */
 
     .source-link {
         display: block;
@@ -186,7 +181,7 @@ user_input = st.chat_input(
 
 
 # =========================================================
-# USER QUESTION
+# PROCESS QUESTION
 # =========================================================
 
 if user_input:
@@ -197,19 +192,14 @@ if user_input:
         st.stop()
 
 
-    # -----------------------------------------------------
-    # Save user message
-    # -----------------------------------------------------
+    # =====================================================
+    # USER MESSAGE
+    # =====================================================
 
     st.session_state.messages.append({
         "role": "user",
         "content": user_input
     })
-
-
-    # -----------------------------------------------------
-    # Display user message
-    # -----------------------------------------------------
 
     with st.chat_message("user"):
 
@@ -244,7 +234,6 @@ if user_input:
 
             st.markdown(answer)
 
-
         st.session_state.messages.append({
             "role": "assistant",
             "content": answer
@@ -254,7 +243,7 @@ if user_input:
 
 
     # =====================================================
-    # MEDICAL QUESTION
+    # ASSISTANT RESPONSE
     # =====================================================
 
     with st.chat_message("assistant"):
@@ -265,22 +254,24 @@ if user_input:
 
             try:
 
-                # -------------------------------------------------
-                # Retrieve documents from Pinecone
-                # -------------------------------------------------
+                # ---------------------------------------------
+                # RETRIEVE DOCUMENTS
+                # ---------------------------------------------
 
-                docs = retriever.invoke(user_input)
+                docs = retriever.invoke(
+                    user_input
+                )
 
 
-                # -------------------------------------------------
-                # No documents found
-                # -------------------------------------------------
+                # ---------------------------------------------
+                # NO DOCUMENTS
+                # ---------------------------------------------
 
                 if not docs:
 
                     answer = (
                         "I don't have information "
-                        "about this topic in my medical sources."
+                        "about this topic."
                     )
 
                     st.markdown(answer)
@@ -293,37 +284,21 @@ if user_input:
                     st.stop()
 
 
-                # -------------------------------------------------
-                # Create context
-                # -------------------------------------------------
-
-                context_parts = []
-
-                for doc in docs:
-
-                    page_number = (
-                        int(
-                            doc.metadata.get(
-                                "page",
-                                0
-                            )
-                        ) + 1
-                    )
-
-                    context_parts.append(
-                        f"[PDF Page {page_number}]\n"
-                        f"{doc.page_content}"
-                    )
-
+                # ---------------------------------------------
+                # CREATE CONTEXT
+                # ---------------------------------------------
 
                 context = "\n\n".join(
-                    context_parts
+                    f"[PDF Page "
+                    f"{doc.metadata.get('page', 0) + 1}]\n"
+                    f"{doc.page_content}"
+                    for doc in docs
                 )
 
 
-                # -------------------------------------------------
-                # Create prompt
-                # -------------------------------------------------
+                # ---------------------------------------------
+                # CREATE PROMPT
+                # ---------------------------------------------
 
                 messages = prompt.format_messages(
                     context=context,
@@ -331,9 +306,9 @@ if user_input:
                 )
 
 
-                # -------------------------------------------------
-                # Generate answer
-                # -------------------------------------------------
+                # ---------------------------------------------
+                # LLM RESPONSE
+                # ---------------------------------------------
 
                 with st.spinner(
                     "Generating answer..."
@@ -372,7 +347,6 @@ if user_input:
         # =====================================================
 
         sources = []
-
         seen_pages = set()
 
 
@@ -400,16 +374,16 @@ if user_input:
 
                 continue
 
-
             seen_pages.add(page)
 
 
-            # -------------------------------------------------
-            # GitHub PDF URL
+            # ---------------------------------------------
+            # PDF URL
+            # ---------------------------------------------
             #
-            # #page=N tells browser PDF viewer
-            # which page to open.
-            # -------------------------------------------------
+            # GitHub PDF
+            # #page=N opens selected PDF page
+            #
 
             pdf_url = (
                 "https://github.com/"
@@ -426,7 +400,7 @@ if user_input:
 
 
         # =====================================================
-        # SHOW SOURCES
+        # DISPLAY SOURCES
         # =====================================================
 
         if sources:
@@ -446,7 +420,7 @@ if user_input:
                             target="_blank"
                             rel="noopener noreferrer"
                         >
-                            📄 Page {page} — Medical_book.pdf
+                            📄 PDF Page {page}
                         </a>
                         """,
                         unsafe_allow_html=True

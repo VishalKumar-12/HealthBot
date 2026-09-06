@@ -154,7 +154,9 @@ if user_input:
 
                 if source:
 
-                    filename = os.path.basename(source)
+                    filename = os.path.basename(
+                        source.replace("\\", "/")
+                    )
 
                     pdf_url = (
                         "https://raw.githubusercontent.com/"
@@ -167,7 +169,7 @@ if user_input:
                     )
 
 
-            # Remove duplicate PDF pages
+            # Remove duplicate sources
             sources = list(dict.fromkeys(sources))
 
 
@@ -183,6 +185,8 @@ if user_input:
                             f'</a>',
                             unsafe_allow_html=True
                         )
+
+
 
     if user_input.lower().strip() in greetings:
 

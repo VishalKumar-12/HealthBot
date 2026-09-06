@@ -76,7 +76,7 @@ def get_llm():
 
 
 # =========================================================
-# Initialize Models
+# Initialize Retriever & LLM
 # =========================================================
 
 retriever = get_retriever()
@@ -129,7 +129,7 @@ user_input = st.chat_input(
 
 
 # =========================================================
-# Chat Processing
+# Process User Input
 # =========================================================
 
 if user_input:
@@ -143,13 +143,15 @@ if user_input:
         "content": user_input
     })
 
+
     with st.chat_message("user"):
+
         st.markdown(user_input)
 
 
-    # -----------------------------------------------------
+    # =====================================================
     # Greetings
-    # -----------------------------------------------------
+    # =====================================================
 
     greetings = [
         "hi",
@@ -176,6 +178,7 @@ if user_input:
         )
 
         with st.chat_message("assistant"):
+
             st.markdown(answer)
 
 
@@ -207,13 +210,8 @@ if user_input:
                     # -------------------------------------------------
 
                     context = "\n\n".join(
-                        f"[PDF: "
-                        f"{os.path.basename("
-                        f"doc.metadata.get('source', 'Unknown')"
-                        f")} | "
-                        f"Page "
-                        f"{doc.metadata.get('page', 0) + 1}]"
-                        f"\n"
+                        f"[PDF Page "
+                        f"{doc.metadata.get('page', 0) + 1}]\n"
                         f"{doc.page_content}"
                         for doc in docs
                     )
@@ -251,9 +249,9 @@ if user_input:
                     st.stop()
 
 
-            # ---------------------------------------------------------
+            # =========================================================
             # Display Answer
-            # ---------------------------------------------------------
+            # =========================================================
 
             st.markdown(
                 answer,
@@ -268,13 +266,9 @@ if user_input:
             sources = []
             seen_sources = set()
 
-
             for doc in docs:
 
-                # -----------------------------------------------------
-                # Page Number
-                # -----------------------------------------------------
-
+                # Pinecone page number starts from 0
                 page = int(
                     doc.metadata.get(
                         "page",
@@ -283,10 +277,7 @@ if user_input:
                 ) + 1
 
 
-                # -----------------------------------------------------
-                # PDF Source
-                # -----------------------------------------------------
-
+                # Actual PDF source stored during ingestion
                 source = doc.metadata.get(
                     "source",
                     ""
@@ -297,29 +288,20 @@ if user_input:
                     continue
 
 
-                # -----------------------------------------------------
-                # Normalize Path
-                # -----------------------------------------------------
-
+                # Windows path -> normal path
                 source = source.replace(
                     "\\",
                     "/"
                 )
 
 
-                # -----------------------------------------------------
-                # Get Filename
-                # -----------------------------------------------------
-
+                # Get only PDF filename
                 filename = os.path.basename(
                     source
                 )
 
 
-                # -----------------------------------------------------
-                # Unique PDF + Page
-                # -----------------------------------------------------
-
+                # Avoid duplicate PDF + page
                 key = (
                     filename,
                     page
@@ -330,10 +312,7 @@ if user_input:
                     continue
 
 
-                # -----------------------------------------------------
-                # GitHub PDF URL
-                # -----------------------------------------------------
-
+                # GitHub PDF
                 pdf_url = (
                     "https://raw.githubusercontent.com/"
                     "VishalKumar-12/HealthBot/main/"
@@ -370,13 +349,7 @@ if user_input:
                         st.markdown(
                             f'''
                             <a href="{pdf_url}"
-                               target="_blank"
-                               style="
-                                   text-decoration:none;
-                                   font-size:16px;
-                                   display:block;
-                                   padding:6px 0;
-                               ">
+                               target="_blank">
                                 📄 Page {page} — {filename}
                             </a>
                             ''',

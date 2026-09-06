@@ -1,12 +1,22 @@
 import os
 import urllib.parse
-
 import streamlit as st
+
 from src.Ingestion import download_embeddings
 from src.prompt import system_prompt
+
 from langchain_pinecone import PineconeVectorStore
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
+
+
+# =========================================================
+# Environment / memory optimization
+# =========================================================
+
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
 
 
 st.set_page_config(
@@ -16,7 +26,10 @@ st.set_page_config(
 )
 
 
+# =========================================================
 # API Keys
+# =========================================================
+
 try:
     PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
     GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
@@ -24,30 +37,59 @@ except Exception:
     PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
+
 if not PINECONE_API_KEY or not GROQ_API_KEY:
-    st.error("API key is missing.")
+    st.error("API keys are missing. Please add them in Streamlit Secrets.")
     st.stop()
 
 
-# Retriever
-@st.cache_resource
+# =========================================================
+# Session State
+# =========================================================
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+if "sources" not in st.session_state:
+    st.session_state.sources = []
+
+
+# =========================================================
+# Cached Embeddings
+# =========================================================
+
+@st.cache_resource(show_spinner="Loading HealthBot...")
+def get_embeddings():
+    return download_embeddings()
+
+
+# =========================================================
+# Cached Retriever
+# =========================================================
+
+@st.cache_resource(show_spinner="Connecting to medical database...")
 def get_retriever():
 
-    embedding = download_embeddings()
+    embeddings = get_embeddings()
 
     vector_store = PineconeVectorStore(
         index_name="healthbot-multilingual-v2-384",
-        embedding=embedding,
+        embedding=embeddings,
         pinecone_api_key=PINECONE_API_KEY
     )
 
     return vector_store.as_retriever(
         search_type="similarity",
-        search_kwargs={"k": 4}
+        search_kwargs={
+            "k": 2
+        }
     )
 
 
-# LLM
+# =========================================================
+# Cached LLM
+# =========================================================
+
 @st.cache_resource
 def get_llm():
 
@@ -58,159 +100,235 @@ def get_llm():
     )
 
 
-retriever = get_retriever()
-llm = get_llm()
+# =========================================================
+# Greeting
+# =========================================================
 
-prompt = ChatPromptTemplate.from_messages([
-    ("system", system_prompt),
-    ("human", "{input}")
-])
+def is_greeting(text):
+
+    greetings = [
+        "hi",
+        "hello",
+        "hey",
+        "hii",
+        "hiii",
+        "namaste",
+        "good morning",
+        "good afternoon",
+        "good evening"
+    ]
+
+    text = text.lower().strip()
+
+    return text in greetings
 
 
-# Session
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+# =========================================================
+# Header
+# =========================================================
 
-if "docs" not in st.session_state:
-    st.session_state.docs = []
-
-
-# UI
 st.title("🩺 HealthBot")
-st.write("AI Medical Assistant")
+st.caption("AI Medical Assistant powered by RAG, Pinecone & Groq")
 
 
-# Chat history
+# =========================================================
+# Chat History
+# =========================================================
+
 for message in st.session_state.messages:
 
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
 
-# Chat input
-user_input = st.chat_input("Ask your medical question...")
+# =========================================================
+# User Input
+# =========================================================
+
+user_input = st.chat_input(
+    "Ask your medical question..."
+)
 
 
 if user_input:
 
-    st.session_state.messages.append({
-        "role": "user",
-        "content": user_input
-    })
+    st.session_state.messages.append(
+        {
+            "role": "user",
+            "content": user_input
+        }
+    )
 
     with st.chat_message("user"):
         st.markdown(user_input)
 
+    # Keep only recent messages
+    st.session_state.messages = st.session_state.messages[-10:]
 
-    greetings = [
-        "hi", "hello", "hey", "hii", "hiii",
-        "good morning", "good afternoon",
-        "good evening", "namaste"
-    ]
+    # =====================================================
+    # Greeting
+    # =====================================================
 
-
-    if user_input.lower().strip() in greetings:
+    if is_greeting(user_input):
 
         answer = (
-            "👋 Hello! I am HealthBot. "
-            "How can I help you?"
+            "Hello! 👋 I am HealthBot.\n\n"
+            "I can answer medical questions using the "
+            "medical knowledge available in my database."
         )
 
-        st.session_state.docs = []
-
-        with st.chat_message("assistant"):
-            st.markdown(answer)
-
+        st.session_state.sources = []
 
     else:
 
-        with st.chat_message("assistant"):
+        # =================================================
+        # Load resources only when actually needed
+        # =================================================
+
+        retriever = get_retriever()
+        llm = get_llm()
+
+        # =================================================
+        # Retrieve documents
+        # =================================================
+
+        docs = retriever.invoke(user_input)
+
+        # Save only lightweight source information
+        sources = []
+
+        for doc in docs:
+
+            source = doc.metadata.get("source", "")
+            page = doc.metadata.get("page", 0)
+
+            pdf_name = os.path.basename(source)
 
             try:
+                page_number = int(page) + 1
+            except Exception:
+                page_number = 1
 
-                with st.spinner("🔎 Searching medical documents..."):
+            sources.append(
+                {
+                    "pdf": pdf_name,
+                    "page": page_number
+                }
+            )
 
-                    docs = retriever.invoke(user_input)
+        st.session_state.sources = sources
 
-                st.session_state.docs = docs
+        # =================================================
+        # Build context
+        # =================================================
 
-                context = "\n\n".join(
-                    f"[PDF Page {int(doc.metadata.get('page', 0)) + 1}]\n"
-                    f"{doc.page_content}"
-                    for doc in docs
+        context_parts = []
+
+        for doc in docs:
+
+            source = doc.metadata.get("source", "")
+            page = doc.metadata.get("page", 0)
+
+            pdf_name = os.path.basename(source)
+
+            try:
+                page_number = int(page) + 1
+            except Exception:
+                page_number = 1
+
+            context_parts.append(
+                f"[PDF: {pdf_name} | Page {page_number}]\n"
+                f"{doc.page_content}"
+            )
+
+        context = "\n\n".join(context_parts)
+
+        # =================================================
+        # Prompt
+        # =================================================
+
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    system_prompt
+                ),
+                (
+                    "human",
+                    "Medical context:\n\n{context}\n\n"
+                    "User question:\n{question}"
                 )
+            ]
+        )
 
-                messages = prompt.format_messages(
-                    context=context,
-                    input=user_input
-                )
+        chain = prompt | llm
 
-                with st.spinner("🤖 Generating answer..."):
+        response = chain.invoke(
+            {
+                "context": context,
+                "question": user_input
+            }
+        )
 
-                    response = llm.invoke(messages)
-                    answer = response.content
+        answer = response.content
 
-                st.markdown(answer)
+    # =====================================================
+    # Assistant Response
+    # =====================================================
 
-            except Exception as e:
+    with st.chat_message("assistant"):
+        st.markdown(answer)
 
-                answer = "❌ Sorry, I was unable to generate an answer."
+    st.session_state.messages.append(
+        {
+            "role": "assistant",
+            "content": answer
+        }
+    )
 
-                st.error(answer)
-                st.exception(e)
-
-                st.session_state.docs = []
-
-
-    # Sources
-    if st.session_state.docs:
-
-        shown_pages = set()
-
-        with st.expander("📖 Sources"):
-
-            for doc in st.session_state.docs:
-
-                page = doc.metadata.get("page")
-
-                if page is None:
-                    continue
-
-                try:
-                    display_page = int(page) + 1
-                except:
-                    continue
-
-                if display_page in shown_pages:
-                    continue
-
-                shown_pages.add(display_page)
-
-                pdf_url = (
-                    "https://raw.githubusercontent.com/"
-                    "VishalKumar-12/HealthBot/main/"
-                    "data/Medical_book.pdf"
-                )
-
-                viewer_url = (
-                    "https://mozilla.github.io/pdf.js/web/viewer.html"
-                    f"?file={urllib.parse.quote(pdf_url, safe='')}"
-                    f"#page={display_page}"
-                )
-
-                st.markdown(
-                    f"📄 **Medical_book.pdf**  \n"
-                    f"Page **{display_page}**"
-                )
-
-                st.link_button(
-                    f"📄 Open PDF — Page {display_page}",
-                    viewer_url,
-                    use_container_width=True
-                )
+    # Keep history small
+    st.session_state.messages = st.session_state.messages[-10:]
 
 
-    st.session_state.messages.append({
-        "role": "assistant",
-        "content": answer
-    })
+# =========================================================
+# Sources
+# =========================================================
+
+if st.session_state.sources:
+
+    st.divider()
+
+    st.subheader("📚 Sources")
+
+    displayed = set()
+
+    for source in st.session_state.sources:
+
+        pdf_name = source["pdf"]
+        page = source["page"]
+
+        key = (pdf_name, page)
+
+        if key in displayed:
+            continue
+
+        displayed.add(key)
+
+        encoded_name = urllib.parse.quote(
+            pdf_name,
+            safe=""
+        )
+
+        pdf_url = (
+            "https://github.com/"
+            "VishalKumar-12/HealthBot/"
+            "blob/main/data/"
+            f"{encoded_name}"
+            f"#page={page}"
+        )
+
+        st.link_button(
+            f"📖 {pdf_name} — Page {page}",
+            pdf_url,
+            use_container_width=True
+        )

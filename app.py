@@ -9,7 +9,6 @@ from langchain_pinecone import PineconeVectorStore
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 
-
 load_dotenv()
 
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
@@ -21,12 +20,9 @@ if not PINECONE_API_KEY:
 if not GROQ_API_KEY:
     raise ValueError("GROQ_API_KEY is missing")
 
-
 app = Flask(__name__)
 
-# INDEX_NAME = "healthbot-multilingual-384"
 INDEX_NAME = "healthbot-multilingual-v2-384"
-
 
 retriever = None
 
@@ -84,54 +80,49 @@ def chat():
     if not msg:
         return "Please enter a question."
 
-    # Retrieve relevant documents
     try:
         retriever_instance = get_retriever()
         docs = retriever_instance.invoke(msg)
 
     except Exception as e:
         print("Pinecone/Embedding Error:", e)
-
-        return (
-            "Sorry, the medical search service is "
-            "temporarily unavailable."
-        )
+        return "Sorry, the medical search service is temporarily unavailable."
 
     if not docs:
-        return (
-            "I don't know about this because the information "
-            "is not available in my medical PDF."
-        )
+        return "I don't know about this because the information is not available in my medical PDF."
 
-    # Combine retrieved document content
     pdf_context = "\n\n".join(
-        doc.page_content for doc in docs
+        f"[PDF Page {doc.metadata.get('page', 0) + 1}]\n"
+        f"{doc.page_content}"
+        for doc in docs
     )
 
-    # Create prompt
     final_messages = prompt.format_messages(
         context=pdf_context,
         input=msg
     )
 
-    # Generate answer
     try:
         response = llm.invoke(final_messages)
 
     except Exception as e:
         print("Groq Error:", e)
+        return "Sorry, I am unable to generate an answer right now. Please try again."
 
-        return (
-            "Sorry, I am unable to generate an answer "
-            "right now. Please try again."
-        )
+    pages = sorted(set(
+        doc.metadata.get("page", 0) + 1
+        for doc in docs
+    ))
 
-    return response.content
+    source_text = "\n\n📖 Sources: " + ", ".join(
+        f"PDF Page {page}" for page in pages
+    )
+
+    return response.content + source_text
 
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-
     app.run(
         host="0.0.0.0",
         port=port,

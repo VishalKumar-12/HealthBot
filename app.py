@@ -163,52 +163,100 @@ if user_input:
 
 
     # Sources
-    if st.session_state.docs:
+if st.session_state.docs:
 
-        shown_pages = set()
+    # PDF + page ko unique rakhenge
+    shown_sources = set()
 
-        with st.expander("📖 Sources"):
+    with st.expander("📖 Sources"):
 
-            for doc in st.session_state.docs:
+        for doc in st.session_state.docs:
 
-                page = doc.metadata.get("page")
+            # -----------------------------
+            # Page number
+            # -----------------------------
 
-                if page is None:
-                    continue
+            page = doc.metadata.get("page")
 
-                try:
-                    display_page = int(page) + 1
-                except:
-                    continue
+            if page is None:
+                continue
 
-                if display_page in shown_pages:
-                    continue
+            try:
+                display_page = int(page) + 1
+            except:
+                continue
 
-                shown_pages.add(display_page)
 
-                pdf_url = (
-                    "https://raw.githubusercontent.com/"
-                    "VishalKumar-12/HealthBot/main/"
-                    "data/Medical_book.pdf"
-                )
+            # -----------------------------
+            # PDF filename
+            # -----------------------------
 
-                viewer_url = (
-                    "https://mozilla.github.io/pdf.js/web/viewer.html"
-                    f"?file={urllib.parse.quote(pdf_url, safe='')}"
-                    f"#page={display_page}"
-                )
+            pdf_name = (
+                doc.metadata.get("source")
+                or doc.metadata.get("file_name")
+                or doc.metadata.get("filename")
+            )
 
-                st.markdown(
-                    f"📄 **Medical_book.pdf**  \n"
-                    f"Page **{display_page}**"
-                )
+            if not pdf_name:
+                # Fallback
+                pdf_name = "Medical_book.pdf"
 
-                st.link_button(
-                    f"📄 Open PDF — Page {display_page}",
-                    viewer_url,
-                    use_container_width=True
-                )
 
+            # Full path ho to sirf filename nikalega
+            pdf_name = os.path.basename(str(pdf_name))
+
+
+            # -----------------------------
+            # Unique PDF + page
+            # -----------------------------
+
+            source_key = (
+                pdf_name,
+                display_page
+            )
+
+            if source_key in shown_sources:
+                continue
+
+            shown_sources.add(source_key)
+
+
+            # -----------------------------
+            # GitHub PDF URL
+            # -----------------------------
+
+            pdf_url = (
+                "https://raw.githubusercontent.com/"
+                "VishalKumar-12/HealthBot/main/"
+                f"data/{urllib.parse.quote(pdf_name)}"
+            )
+
+
+            # -----------------------------
+            # PDF.js viewer
+            # -----------------------------
+
+            viewer_url = (
+                "https://mozilla.github.io/pdf.js/web/viewer.html"
+                f"?file={urllib.parse.quote(pdf_url, safe='')}"
+                f"#page={display_page}"
+            )
+
+
+            # -----------------------------
+            # Display source
+            # -----------------------------
+
+            st.markdown(
+                f"📄 **{pdf_name}**  \n"
+                f"Page **{display_page}**"
+            )
+
+            st.link_button(
+                f"📄 Open {pdf_name} — Page {display_page}",
+                viewer_url,
+                use_container_width=True
+            )
 
     st.session_state.messages.append({
         "role": "assistant",

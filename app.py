@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, send_from_directory
 from dotenv import load_dotenv
 import os
 
@@ -9,20 +9,17 @@ from langchain_pinecone import PineconeVectorStore
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 
+
 load_dotenv()
 
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-if not PINECONE_API_KEY:
-    raise ValueError("PINECONE_API_KEY is missing")
+if not PINECONE_API_KEY or not GROQ_API_KEY:
+    raise ValueError("API key is missing")
 
-if not GROQ_API_KEY:
-    raise ValueError("GROQ_API_KEY is missing")
 
 app = Flask(__name__)
-
-INDEX_NAME = "healthbot-multilingual-v2-384"
 
 retriever = None
 
@@ -30,26 +27,18 @@ retriever = None
 def get_retriever():
     global retriever
 
-    if retriever is not None:
-        return retriever
+    if retriever is None:
+        embedding = download_embeddings()
 
-    print("Loading embedding model...")
+        vector_store = PineconeVectorStore(
+            index_name="healthbot-multilingual-v2-384",
+            embedding=embedding
+        )
 
-    embedding = download_embeddings()
-
-    print("Connecting to Pinecone...")
-
-    vector_store = PineconeVectorStore(
-        index_name=INDEX_NAME,
-        embedding=embedding
-    )
-
-    retriever = vector_store.as_retriever(
-        search_type="similarity",
-        search_kwargs={"k": 4}
-    )
-
-    print("Retriever ready.")
+        retriever = vector_store.as_retriever(
+            search_type="similarity",
+            search_kwargs={"k": 4}
+        )
 
     return retriever
 
@@ -72,6 +61,11 @@ def index():
     return render_template("chat.html")
 
 
+@app.route("/pdf/<path:filename>")
+def serve_pdf(filename):
+    return send_from_directory("data", filename)
+
+
 @app.route("/get", methods=["POST"])
 def chat():
 
@@ -80,49 +74,84 @@ def chat():
     if not msg:
         return "Please enter a question."
 
-    try:
-        retriever_instance = get_retriever()
-        docs = retriever_instance.invoke(msg)
+    # Greeting
+    if msg.lower() in [
+        "hi", "hello", "hey", "hii", "hiii",
+        "good morning", "good afternoon",
+        "good evening", "namaste"
+    ]:
+        return "👋 Hello! I am HealthBot. How can I help you?"
 
+    # Search PDF
+    try:
+        docs = get_retriever().invoke(msg)
     except Exception as e:
-        print("Pinecone/Embedding Error:", e)
+        print("Pinecone Error:", e)
         return "Sorry, the medical search service is temporarily unavailable."
 
     if not docs:
-        return "I don't know about this because the information is not available in my medical PDF."
+        return "I don't have information about this topic."
 
-    pdf_context = "\n\n".join(
-        f"[PDF Page {doc.metadata.get('page', 0) + 1}]\n"
-        f"{doc.page_content}"
+    # Create context
+    context = "\n\n".join(
+        f"[PDF Page {doc.metadata.get('page', 0) + 1}]\n{doc.page_content}"
         for doc in docs
     )
 
-    final_messages = prompt.format_messages(
-        context=pdf_context,
+    # Ask AI
+    messages = prompt.format_messages(
+        context=context,
         input=msg
     )
 
     try:
-        response = llm.invoke(final_messages)
-
+        response = llm.invoke(messages)
     except Exception as e:
         print("Groq Error:", e)
-        return "Sorry, I am unable to generate an answer right now. Please try again."
+        return "Sorry, I am unable to generate an answer right now."
 
-    pages = sorted(set(
-        doc.metadata.get("page", 0) + 1
-        for doc in docs
-    ))
+    answer = response.content
 
-    source_text = "\n\n📖 Sources: " + ", ".join(
-        f"PDF Page {page}" for page in pages
-    )
+    # Unknown answer
+    unknown = [
+        "don't know",
+        "do not know",
+        "not available",
+        "not found",
+        "not mentioned"
+    ]
 
-    return response.content + source_text
+    if any(word in answer.lower() for word in unknown):
+        return answer
+
+    # PDF pages
+    sources = []
+
+    for doc in docs:
+
+        page = int(doc.metadata.get("page", 0)) + 1
+        source = doc.metadata.get("source", "")
+
+        if source:
+            filename = os.path.basename(source)
+
+            sources.append(
+                f"- 📄 <a href='/pdf/{filename}#page={page}' "
+                f"target='_blank'>PDF Page {page}</a>"
+            )
+
+    sources = list(dict.fromkeys(sources))
+
+    if sources:
+        answer += "\n\n### 📖 Sources\n" + "\n".join(sources)
+
+    return answer
 
 
 if __name__ == "__main__":
+
     port = int(os.environ.get("PORT", 5000))
+
     app.run(
         host="0.0.0.0",
         port=port,

@@ -128,7 +128,7 @@ user_input = st.chat_input(
 if user_input:
 
     # -----------------------------------------------------
-    # Add User Message
+    # Save User Message
     # -----------------------------------------------------
 
     st.session_state.messages.append({
@@ -267,10 +267,31 @@ if user_input:
 
 
                 # ---------------------------------------------
-                # Get PDF Filename
+                # Normalize Source Path
                 # ---------------------------------------------
 
-                filename = os.path.basename(source)
+                source = source.replace(
+                    "\\",
+                    "/"
+                )
+
+
+                # ---------------------------------------------
+                # Get Relative Path Inside data/
+                # ---------------------------------------------
+
+                if "data/" in source:
+
+                    relative_path = source.split(
+                        "data/",
+                        1
+                    )[1]
+
+                else:
+
+                    relative_path = os.path.basename(
+                        source
+                    )
 
 
                 # ---------------------------------------------
@@ -278,7 +299,7 @@ if user_input:
                 # ---------------------------------------------
 
                 key = (
-                    filename,
+                    relative_path,
                     page
                 )
 
@@ -294,17 +315,18 @@ if user_input:
                 pdf_url = (
                     "https://raw.githubusercontent.com/"
                     "VishalKumar-12/HealthBot/main/"
-                    f"data/{filename}#page={page}"
+                    f"data/{relative_path}#page={page}"
                 )
 
 
                 sources.append(
                     (
                         page,
-                        filename,
+                        relative_path,
                         pdf_url
                     )
                 )
+
 
                 seen_pages.add(key)
 
@@ -319,14 +341,17 @@ if user_input:
                     "📖 Sources"
                 ):
 
-                    for page, filename, pdf_url in sources:
+                    for page, relative_path, pdf_url in sources:
+
+                        filename = os.path.basename(
+                            relative_path
+                        )
 
                         st.markdown(
                             f'''
                             <a href="{pdf_url}"
                                target="_blank">
-                                📄 Page {page} —
-                                {filename}
+                                📄 Page {page} — {filename}
                             </a>
                             ''',
                             unsafe_allow_html=True

@@ -144,48 +144,43 @@ if user_input:
             )
 
 
-           # PDF Sources
+            # Sources
             sources = []
+            seen_pages = set()
 
             for doc in docs:
 
-                page = int(doc.metadata.get("page", 0)) + 1
-                source = doc.metadata.get("source", "")
+                page = int(
+                    doc.metadata.get("page", 0)
+                ) + 1
 
-                if source:
-
-                    filename = os.path.basename(
-                        source.replace("\\", "/")
-                    )
+                if page not in seen_pages:
 
                     pdf_url = (
                         "https://raw.githubusercontent.com/"
                         "VishalKumar-12/HealthBot/main/"
-                        f"data/{filename}#page={page}"
+                        f"data/Medical_book.pdf#page={page}"
                     )
 
                     sources.append(
-                        (page, filename, pdf_url)
+                        (page, pdf_url)
                     )
 
-
-            # Remove duplicate sources
-            sources = list(dict.fromkeys(sources))
+                    seen_pages.add(page)
 
 
             if sources:
 
                 with st.expander("📖 Sources"):
 
-                    for page, filename, pdf_url in sources:
+                    for page, pdf_url in sources:
 
                         st.markdown(
                             f'<a href="{pdf_url}" target="_blank">'
-                            f'📄 PDF Page {page} — {filename}'
+                            f'📄 Page {page} — Medical_book.pdf'
                             f'</a>',
                             unsafe_allow_html=True
                         )
-
 
 
     if user_input.lower().strip() in greetings:

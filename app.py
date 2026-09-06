@@ -3,15 +3,10 @@ import streamlit as st
 
 from src.Ingestion import download_embeddings
 from src.prompt import system_prompt
-
 from langchain_pinecone import PineconeVectorStore
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 
-
-# =========================================================
-# Page configuration
-# =========================================================
 
 st.set_page_config(
     page_title="HealthBot",
@@ -20,33 +15,20 @@ st.set_page_config(
 )
 
 
-# =========================================================
 # API Keys
-# =========================================================
+try:
+    PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
+    GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
+except Exception:
+    PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-PINECONE_API_KEY = st.secrets.get(
-    "PINECONE_API_KEY",
-    os.getenv("PINECONE_API_KEY")
-)
-
-GROQ_API_KEY = st.secrets.get(
-    "GROQ_API_KEY",
-    os.getenv("GROQ_API_KEY")
-)
-
-if not PINECONE_API_KEY:
-    st.error("PINECONE_API_KEY is missing.")
-    st.stop()
-
-if not GROQ_API_KEY:
-    st.error("GROQ_API_KEY is missing.")
+if not PINECONE_API_KEY or not GROQ_API_KEY:
+    st.error("API key is missing.")
     st.stop()
 
 
-# =========================================================
-# Load Retriever
-# =========================================================
-
+# Retriever
 @st.cache_resource
 def get_retriever():
 
@@ -64,10 +46,7 @@ def get_retriever():
     )
 
 
-# =========================================================
-# Load LLM
-# =========================================================
-
+# LLM
 @st.cache_resource
 def get_llm():
 
@@ -78,9 +57,8 @@ def get_llm():
     )
 
 
-# =========================================================
-# Prompt
-# =========================================================
+retriever = get_retriever()
+llm = get_llm()
 
 prompt = ChatPromptTemplate.from_messages([
     ("system", system_prompt),
@@ -88,65 +66,27 @@ prompt = ChatPromptTemplate.from_messages([
 ])
 
 
-# =========================================================
-# Load resources
-# =========================================================
-
-try:
-
-    retriever = get_retriever()
-    llm = get_llm()
-
-except Exception as e:
-
-    st.error("HealthBot could not start.")
-    st.exception(e)
-    st.stop()
-
-
-# =========================================================
 # UI
-# =========================================================
-
 st.title("🩺 HealthBot")
+st.write("AI Medical Assistant")
 
-st.write(
-    "AI Medical Assistant powered by your medical knowledge system."
-)
-
-
-# =========================================================
-# Session History
-# =========================================================
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
 
-# =========================================================
-# Display previous messages
-# =========================================================
-
 for message in st.session_state.messages:
-
     with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+        st.markdown(
+            message["content"],
+            unsafe_allow_html=True
+        )
 
 
-# =========================================================
-# User Input
-# =========================================================
-
-user_input = st.chat_input(
-    "Ask your medical question..."
-)
+user_input = st.chat_input("Ask your medical question...")
 
 
 if user_input:
-
-    # -----------------------------------------------------
-    # User message
-    # -----------------------------------------------------
 
     st.session_state.messages.append({
         "role": "user",
@@ -157,121 +97,56 @@ if user_input:
         st.markdown(user_input)
 
 
-    # -----------------------------------------------------
     # Greeting
-    # -----------------------------------------------------
-
     greetings = [
-        "hi",
-        "hello",
-        "hey",
-        "hii",
-        "hiii",
-        "good morning",
-        "good afternoon",
-        "good evening",
-        "namaste"
+        "hi", "hello", "hey", "hii", "hiii",
+        "good morning", "good afternoon",
+        "good evening", "namaste"
     ]
 
-    if user_input.lower() in greetings:
+    if user_input.lower().strip() in greetings:
 
         answer = "👋 Hello! I am HealthBot. How can I help you?"
 
+    else:
+
         with st.chat_message("assistant"):
-            st.markdown(answer)
 
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": answer
-        })
+            with st.spinner("Searching medical information..."):
 
-        st.stop()
+                try:
+                    docs = retriever.invoke(user_input)
 
+                    context = "\n\n".join(
+                        f"[PDF Page {doc.metadata.get('page', 0) + 1}]\n"
+                        f"{doc.page_content}"
+                        for doc in docs
+                    )
 
-    # -----------------------------------------------------
-    # Search Pinecone
-    # -----------------------------------------------------
+                    messages = prompt.format_messages(
+                        context=context,
+                        input=user_input
+                    )
 
-    with st.chat_message("assistant"):
+                    response = llm.invoke(messages)
+                    answer = response.content
 
-        with st.spinner("Searching medical information..."):
+                except Exception as e:
 
-            try:
-
-                docs = retriever.invoke(user_input)
-
-            except Exception as e:
-
-                st.error(
-                    "Sorry, the medical search service "
-                    "is temporarily unavailable."
-                )
-
-                st.stop()
+                    st.error("Unable to generate answer.")
+                    st.exception(e)
+                    st.stop()
 
 
-            if not docs:
-
-                answer = (
-                    "I don't have information about this topic."
-                )
-
-                st.markdown(answer)
-
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": answer
-                })
-
-                st.stop()
-
-
-            # -------------------------------------------------
-            # Create context
-            # -------------------------------------------------
-
-            context = "\n\n".join(
-                f"[PDF Page {doc.metadata.get('page', 0) + 1}]\n"
-                f"{doc.page_content}"
-                for doc in docs
+            st.markdown(
+                answer,
+                unsafe_allow_html=True
             )
 
 
-            # -------------------------------------------------
-            # Generate answer
-            # -------------------------------------------------
-
-            messages = prompt.format_messages(
-                context=context,
-                input=user_input
-            )
-
-            try:
-
-                response = llm.invoke(messages)
-
-                answer = response.content
-
-            except Exception:
-
-                answer = (
-                    "Sorry, I am unable to generate "
-                    "an answer right now."
-                )
-
-
-            # -------------------------------------------------
-            # Display answer
-            # -------------------------------------------------
-
-            st.markdown(answer)
-
-
-            # -------------------------------------------------
             # Sources
-            # -------------------------------------------------
-
             sources = []
+            seen_pages = set()
 
             for doc in docs:
 
@@ -279,36 +154,39 @@ if user_input:
                     doc.metadata.get("page", 0)
                 ) + 1
 
-                source = doc.metadata.get(
-                    "source",
-                    ""
-                )
+                if page not in seen_pages:
 
-                if source:
-
-                    filename = os.path.basename(source)
-
-                    sources.append(
-                        f"📄 **Page {page}** — `{filename}`"
+                    pdf_url = (
+                        "https://raw.githubusercontent.com/"
+                        "VishalKumar-12/HealthBot/main/"
+                        f"data/Medical_book.pdf#page={page}"
                     )
 
+                    sources.append(
+                        (page, pdf_url)
+                    )
 
-            sources = list(
-                dict.fromkeys(sources)
-            )
+                    seen_pages.add(page)
 
 
             if sources:
 
                 with st.expander("📖 Sources"):
 
-                    for source in sources:
-                        st.markdown(source)
+                    for page, pdf_url in sources:
+
+                        st.markdown(
+                            f'<a href="{pdf_url}" target="_blank">'
+                            f'📄 Page {page} — Medical_book.pdf'
+                            f'</a>',
+                            unsafe_allow_html=True
+                        )
 
 
-    # -----------------------------------------------------
-    # Save assistant response
-    # -----------------------------------------------------
+    if user_input.lower().strip() in greetings:
+
+        with st.chat_message("assistant"):
+            st.markdown(answer)
 
     st.session_state.messages.append({
         "role": "assistant",

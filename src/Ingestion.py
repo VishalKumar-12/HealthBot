@@ -68,7 +68,6 @@ def text_split(minimal_docs):
 # =========================================================
 # Load Embedding Model
 # =========================================================
-
 def download_embeddings():
 
     model_name = "sentence-transformers/all-MiniLM-L6-v2"
@@ -84,6 +83,25 @@ def download_embeddings():
     )
 
     return embeddings
+
+
+
+
+# def download_embeddings():
+
+#     model_name = "sentence-transformers/all-MiniLM-L6-v2"
+
+#     embeddings = HuggingFaceEmbeddings(
+#         model_name=model_name,
+#         model_kwargs={
+#             "device": "cpu"
+#         },
+#         encode_kwargs={
+#             "normalize_embeddings": True
+#         }
+#     )
+
+#     return embeddings
 
 # from langchain_community.document_loaders import PyPDFLoader, DirectoryLoader
 # from langchain_text_splitters import RecursiveCharacterTextSplitter

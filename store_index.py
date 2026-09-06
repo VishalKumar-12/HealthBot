@@ -8,108 +8,52 @@ from src.Ingestion import (
     load_pdf_files,
     filter_to_minimal_docs,
     text_split,
-    download_embeddings,
+    download_embeddings
 )
 
 
-# ============================================================
-# Load environment variables
-# ============================================================
-
+# Load API key
 load_dotenv()
 
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 
 if not PINECONE_API_KEY:
-    raise ValueError("PINECONE_API_KEY is not set in .env file")
+    raise ValueError("PINECONE_API_KEY is missing")
 
 
-# ============================================================
-# Initialize Pinecone
-# ============================================================
-
+# Pinecone
 pc = Pinecone(api_key=PINECONE_API_KEY)
-
-
-# ============================================================
-# 1. Load PDF files
-# ============================================================
-
-print("\n========================================")
-print("1. Loading PDF files...")
-print("========================================")
-
-documents = load_pdf_files("data")
-
-print(f"Total PDFs Loaded: {len(documents)}")
-
-if not documents:
-    raise ValueError(
-        "No PDF files found inside the 'data' folder."
-    )
-
-
-# ============================================================
-# 2. Filter documents
-# ============================================================
-
-print("\n========================================")
-print("2. Filtering documents...")
-print("========================================")
-
-minimal_docs = filter_to_minimal_docs(documents)
-
-print(f"Minimal Documents: {len(minimal_docs)}")
-
-
-# ============================================================
-# 3. Create chunks
-# ============================================================
-
-print("\n========================================")
-print("3. Creating text chunks...")
-print("========================================")
-
-texts_chunk = text_split(minimal_docs)
-
-print(f"Total Chunks Created: {len(texts_chunk)}")
-
-if not texts_chunk:
-    raise ValueError(
-        "No chunks were created from the PDFs."
-    )
-
-
-# ============================================================
-# 4. Load embedding model
-# ============================================================
-
-print("\n========================================")
-print("4. Loading embedding model...")
-print("========================================")
-
-embedding = download_embeddings()
-
-print("Embedding model loaded successfully.")
-print("Model: all-MiniLM-L6-v2")
-print("Dimension: 384")
-
-
-# ============================================================
-# 5. Pinecone Index
-# ============================================================
 
 index_name = "healthbot-multilingual-384"
 
-print("\n========================================")
-print("5. Checking Pinecone index...")
-print("========================================")
 
+# Load PDFs
+documents = load_pdf_files("data")
+
+if not documents:
+    raise ValueError("No PDF found")
+
+print("PDFs loaded:", len(documents))
+
+
+# Filter documents
+documents = filter_to_minimal_docs(documents)
+
+
+# Create chunks
+chunks = text_split(documents)
+
+print("Chunks created:", len(chunks))
+
+
+# Load embedding model
+embedding = download_embeddings()
+
+print("Embedding model loaded")
+
+
+# Create Pinecone index if not exists
 if not pc.has_index(index_name):
-
-    print(
-        f"Creating Pinecone index: {index_name}"
-    )
 
     pc.create_index(
         name=index_name,
@@ -121,127 +65,47 @@ if not pc.has_index(index_name):
         )
     )
 
-    print("Index created successfully!")
-
-else:
-
-    print(
-        f"Pinecone index '{index_name}' already exists."
-    )
+    print("Index created")
 
 
-# ============================================================
-# 6. Connect to Pinecone index
-# ============================================================
-
-print("\n========================================")
-print("6. Connecting to Pinecone...")
-print("========================================")
-
+# Connect to index
 index = pc.Index(index_name)
 
-print("Pinecone index connected.")
 
-print("\nCurrent Index Stats:")
-print(index.describe_index_stats())
-
-
-# ============================================================
-# 7. Create Vector Store
-# ============================================================
-
-print("\n========================================")
-print("7. Creating Vector Store...")
-print("========================================")
-
-docsearch = PineconeVectorStore(
+# Create vector store
+vector_store = PineconeVectorStore(
     index=index,
     embedding=embedding
 )
 
-print("Vector store created successfully.")
 
+# Upload chunks
+batch_size = 50
 
-# ============================================================
-# 8. Upload documents in batches
-# ============================================================
+for i in range(0, len(chunks), batch_size):
 
-print("\n========================================")
-print("8. Uploading documents...")
-print("========================================")
+    batch = chunks[i:i + batch_size]
 
-BATCH_SIZE = 50
-
-total_chunks = len(texts_chunk)
-
-print(f"Total chunks: {total_chunks}")
-print(f"Batch size: {BATCH_SIZE}")
-
-
-for i in range(0, total_chunks, BATCH_SIZE):
-
-    batch = texts_chunk[i:i + BATCH_SIZE]
-
-    start = i + 1
-    end = min(
-        i + BATCH_SIZE,
-        total_chunks
-    )
+    vector_store.add_documents(batch)
 
     print(
-        f"\nUploading chunks "
-        f"{start} - {end} "
-        f"of {total_chunks}"
+        "Uploaded:",
+        min(i + batch_size, len(chunks)),
+        "/",
+        len(chunks)
     )
 
-    try:
 
-        docsearch.add_documents(batch)
-
-        print(
-            f"Successfully uploaded "
-            f"chunks {start} - {end}"
-        )
-
-    except Exception as e:
-
-        print(
-            f"\nERROR uploading "
-            f"chunks {start} - {end}"
-        )
-
-        print(e)
-
-        raise
+print("All documents uploaded successfully!")
 
 
-# ============================================================
-# 9. Final Statistics
-# ============================================================
-
-print("\n========================================")
-print("9. Final Pinecone Statistics")
-print("========================================")
-
-final_stats = index.describe_index_stats()
-
-print(final_stats)
 
 
-# ============================================================
-# 10. Done
-# ============================================================
 
-print("\n========================================")
-print("ALL DOCUMENTS UPLOADED SUCCESSFULLY!")
-print("========================================")
 
-print(f"Index Name  : {index_name}")
-print("Embedding   : all-MiniLM-L6-v2")
-print("Dimension   : 384")
-print(f"Total Chunks: {total_chunks}")
 
-print("========================================")
+
+
 
 
 

@@ -1,6 +1,5 @@
-from flask import Flask, render_template, request, send_from_directory
-from dotenv import load_dotenv
 import os
+import streamlit as st
 
 from src.Ingestion import download_embeddings
 from src.prompt import system_prompt
@@ -10,45 +9,78 @@ from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 
 
-load_dotenv()
+# =========================================================
+# Page configuration
+# =========================================================
 
-PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-
-if not PINECONE_API_KEY or not GROQ_API_KEY:
-    raise ValueError("API key is missing")
-
-
-app = Flask(__name__)
-
-retriever = None
-
-
-def get_retriever():
-    global retriever
-
-    if retriever is None:
-        embedding = download_embeddings()
-
-        vector_store = PineconeVectorStore(
-            index_name="healthbot-multilingual-v2-384",
-            embedding=embedding
-        )
-
-        retriever = vector_store.as_retriever(
-            search_type="similarity",
-            search_kwargs={"k": 4}
-        )
-
-    return retriever
-
-
-llm = ChatGroq(
-    model="openai/gpt-oss-20b",
-    api_key=GROQ_API_KEY,
-    temperature=0
+st.set_page_config(
+    page_title="HealthBot",
+    page_icon="🩺",
+    layout="wide"
 )
 
+
+# =========================================================
+# API Keys
+# =========================================================
+
+PINECONE_API_KEY = st.secrets.get(
+    "PINECONE_API_KEY",
+    os.getenv("PINECONE_API_KEY")
+)
+
+GROQ_API_KEY = st.secrets.get(
+    "GROQ_API_KEY",
+    os.getenv("GROQ_API_KEY")
+)
+
+if not PINECONE_API_KEY:
+    st.error("PINECONE_API_KEY is missing.")
+    st.stop()
+
+if not GROQ_API_KEY:
+    st.error("GROQ_API_KEY is missing.")
+    st.stop()
+
+
+# =========================================================
+# Load Retriever
+# =========================================================
+
+@st.cache_resource
+def get_retriever():
+
+    embedding = download_embeddings()
+
+    vector_store = PineconeVectorStore(
+        index_name="healthbot-multilingual-v2-384",
+        embedding=embedding,
+        pinecone_api_key=PINECONE_API_KEY
+    )
+
+    return vector_store.as_retriever(
+        search_type="similarity",
+        search_kwargs={"k": 4}
+    )
+
+
+# =========================================================
+# Load LLM
+# =========================================================
+
+@st.cache_resource
+def get_llm():
+
+    return ChatGroq(
+        model="openai/gpt-oss-20b",
+        api_key=GROQ_API_KEY,
+        temperature=0
+    )
+
+
+# =========================================================
+# Prompt
+# =========================================================
 
 prompt = ChatPromptTemplate.from_messages([
     ("system", system_prompt),
@@ -56,104 +88,229 @@ prompt = ChatPromptTemplate.from_messages([
 ])
 
 
-@app.route("/")
-def index():
-    return render_template("chat.html")
+# =========================================================
+# Load resources
+# =========================================================
+
+try:
+
+    retriever = get_retriever()
+    llm = get_llm()
+
+except Exception as e:
+
+    st.error("HealthBot could not start.")
+    st.exception(e)
+    st.stop()
 
 
-@app.route("/pdf/<path:filename>")
-def serve_pdf(filename):
-    return send_from_directory("data", filename)
+# =========================================================
+# UI
+# =========================================================
+
+st.title("🩺 HealthBot")
+
+st.write(
+    "AI Medical Assistant powered by your medical knowledge system."
+)
 
 
-@app.route("/get", methods=["POST"])
-def chat():
+# =========================================================
+# Session History
+# =========================================================
 
-    msg = request.form.get("msg", "").strip()
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-    if not msg:
-        return "Please enter a question."
 
+# =========================================================
+# Display previous messages
+# =========================================================
+
+for message in st.session_state.messages:
+
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+
+# =========================================================
+# User Input
+# =========================================================
+
+user_input = st.chat_input(
+    "Ask your medical question..."
+)
+
+
+if user_input:
+
+    # -----------------------------------------------------
+    # User message
+    # -----------------------------------------------------
+
+    st.session_state.messages.append({
+        "role": "user",
+        "content": user_input
+    })
+
+    with st.chat_message("user"):
+        st.markdown(user_input)
+
+
+    # -----------------------------------------------------
     # Greeting
-    if msg.lower() in [
-        "hi", "hello", "hey", "hii", "hiii",
-        "good morning", "good afternoon",
-        "good evening", "namaste"
-    ]:
-        return "👋 Hello! I am HealthBot. How can I help you?"
+    # -----------------------------------------------------
 
-    # Search PDF
-    try:
-        docs = get_retriever().invoke(msg)
-    except Exception as e:
-        print("Pinecone Error:", e)
-        return "Sorry, the medical search service is temporarily unavailable."
-
-    if not docs:
-        return "I don't have information about this topic."
-
-    # Create context
-    context = "\n\n".join(
-        f"[PDF Page {doc.metadata.get('page', 0) + 1}]\n{doc.page_content}"
-        for doc in docs
-    )
-
-    # Ask AI
-    messages = prompt.format_messages(
-        context=context,
-        input=msg
-    )
-
-    try:
-        response = llm.invoke(messages)
-    except Exception as e:
-        print("Groq Error:", e)
-        return "Sorry, I am unable to generate an answer right now."
-
-    answer = response.content
-
-    # Unknown answer
-    unknown = [
-        "don't know",
-        "do not know",
-        "not available",
-        "not found",
-        "not mentioned"
+    greetings = [
+        "hi",
+        "hello",
+        "hey",
+        "hii",
+        "hiii",
+        "good morning",
+        "good afternoon",
+        "good evening",
+        "namaste"
     ]
 
-    if any(word in answer.lower() for word in unknown):
-        return answer
+    if user_input.lower() in greetings:
 
-    # PDF pages
-    sources = []
+        answer = "👋 Hello! I am HealthBot. How can I help you?"
 
-    for doc in docs:
+        with st.chat_message("assistant"):
+            st.markdown(answer)
 
-        page = int(doc.metadata.get("page", 0)) + 1
-        source = doc.metadata.get("source", "")
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": answer
+        })
 
-        if source:
-            filename = os.path.basename(source)
+        st.stop()
 
-            sources.append(
-                f"- 📄 <a href='/pdf/{filename}#page={page}' "
-                f"target='_blank'>PDF Page {page}</a>"
+
+    # -----------------------------------------------------
+    # Search Pinecone
+    # -----------------------------------------------------
+
+    with st.chat_message("assistant"):
+
+        with st.spinner("Searching medical information..."):
+
+            try:
+
+                docs = retriever.invoke(user_input)
+
+            except Exception as e:
+
+                st.error(
+                    "Sorry, the medical search service "
+                    "is temporarily unavailable."
+                )
+
+                st.stop()
+
+
+            if not docs:
+
+                answer = (
+                    "I don't have information about this topic."
+                )
+
+                st.markdown(answer)
+
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": answer
+                })
+
+                st.stop()
+
+
+            # -------------------------------------------------
+            # Create context
+            # -------------------------------------------------
+
+            context = "\n\n".join(
+                f"[PDF Page {doc.metadata.get('page', 0) + 1}]\n"
+                f"{doc.page_content}"
+                for doc in docs
             )
 
-    sources = list(dict.fromkeys(sources))
 
-    if sources:
-        answer += "\n\n### 📖 Sources\n" + "\n".join(sources)
+            # -------------------------------------------------
+            # Generate answer
+            # -------------------------------------------------
 
-    return answer
+            messages = prompt.format_messages(
+                context=context,
+                input=user_input
+            )
+
+            try:
+
+                response = llm.invoke(messages)
+
+                answer = response.content
+
+            except Exception:
+
+                answer = (
+                    "Sorry, I am unable to generate "
+                    "an answer right now."
+                )
 
 
-if __name__ == "__main__":
+            # -------------------------------------------------
+            # Display answer
+            # -------------------------------------------------
 
-    port = int(os.environ.get("PORT", 5000))
+            st.markdown(answer)
 
-    app.run(
-        host="0.0.0.0",
-        port=port,
-        debug=False
-    )
+
+            # -------------------------------------------------
+            # Sources
+            # -------------------------------------------------
+
+            sources = []
+
+            for doc in docs:
+
+                page = int(
+                    doc.metadata.get("page", 0)
+                ) + 1
+
+                source = doc.metadata.get(
+                    "source",
+                    ""
+                )
+
+                if source:
+
+                    filename = os.path.basename(source)
+
+                    sources.append(
+                        f"📄 **Page {page}** — `{filename}`"
+                    )
+
+
+            sources = list(
+                dict.fromkeys(sources)
+            )
+
+
+            if sources:
+
+                with st.expander("📖 Sources"):
+
+                    for source in sources:
+                        st.markdown(source)
+
+
+    # -----------------------------------------------------
+    # Save assistant response
+    # -----------------------------------------------------
+
+    st.session_state.messages.append({
+        "role": "assistant",
+        "content": answer
+    })

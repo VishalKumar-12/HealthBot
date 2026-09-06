@@ -1,4 +1,4 @@
-flask==3.1.1
+streamlit
 python-dotenv==1.1.0
 
 langchain==0.3.26
@@ -11,7 +11,23 @@ langchain-huggingface
 sentence-transformers==4.1.0
 pypdf==5.6.1
 pinecone
-gunicorn
+
+
+
+# flask==3.1.1
+# python-dotenv==1.1.0
+
+# langchain==0.3.26
+# langchain-community==0.3.26
+# langchain-pinecone==0.2.8
+# langchain-groq
+# langchain-text-splitters
+# langchain-huggingface
+
+# sentence-transformers==4.1.0
+# pypdf==5.6.1
+# pinecone
+# gunicorn
 
 
 # langchain==0.3.26

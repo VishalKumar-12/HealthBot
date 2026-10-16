@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 import urllib.parse
 
@@ -316,4 +315,4 @@ st.caption(
     "🩺 HealthBot | Medical information for educational purposes. "
     "Always consult a qualified healthcare professional."
 )
-```
+
